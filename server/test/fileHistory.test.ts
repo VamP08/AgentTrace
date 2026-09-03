@@ -28,6 +28,11 @@ describe('trackedFiles', () => {
     const e: Event = { ...base, kind: 'snapshot', id: 'r', files: { 'AgentTrace\\.gitignore': { backup: '729c6c8f7ee7df73@v2', version: 2, backupTime: 'bt', dir: 'E:\\Work\\Live\\code\\Project\\AgentTrace' } } };
     expect(trackedFiles([e])[0].path).toBe('E:\\Work\\Live\\code\\Project\\AgentTrace\\.gitignore');
   });
+  it('resolves a relative path with no recorded folder against the session folder, never the server folder', () => {
+    const e: Event = { ...base, kind: 'snapshot', id: 'r2', files: { 'doc2agent\\app\\main.py': { backup: '729c6c8f7ee7df73@v2', version: 2, backupTime: 'bt' } } };
+    expect(trackedFiles([e], 'E:\\Work\\Live\\code\\Project')[0].path).toBe('E:\\Work\\Live\\code\\Project\\doc2agent\\app\\main.py');
+    expect(trackedFiles([e])[0].path).toBe('doc2agent\\app\\main.py');
+  });
   it('file-history-delta records parse into single-file snapshots', () => {
     const line = JSON.stringify({ type: 'file-history-delta', uuid: 'd1', trackingPath: 'C:\\p\\a.ts', backup: { backupFileName: '0123456789abcdef@v3', version: 3, backupTime: 'bt' } });
     const [e] = parseLine(line, { sessionId: 'S' });

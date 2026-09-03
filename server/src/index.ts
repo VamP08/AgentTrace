@@ -119,7 +119,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         const session = discoverSessions(claudeRoot).find((x) => x.id === id);
         if (!session?.cwd) return json(res, 404, { error: 'unknown session' });
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
-        const repos = gitRootsFor(session.cwd, trackedFiles(parsed.events).map((f) => f.path));
+        const repos = gitRootsFor(session.cwd, trackedFiles(parsed.events, session.cwd).map((f) => f.path));
         const sha = url.searchParams.get('sha');
         if (sha) {
           for (const repo of repos) {
@@ -137,7 +137,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       if (parts[3] === 'record') {
         const session = discoverSessions(claudeRoot).find((x) => x.id === id);
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
-        const touched = trackedFiles(parsed.events).map((f) => f.path);
+        const touched = session?.cwd ? trackedFiles(parsed.events, session.cwd).map((f) => f.path) : [];
         const record = session?.cwd ? readRecord(session.cwd, touched) : undefined;
         if (!record) return json(res, 404, { error: 'no agenttrace.json above the folder this session ran in' });
         const file = url.searchParams.get('file');
@@ -156,6 +156,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, await parseFile(file, { sessionId: id, agentId: agent }));
       }
       if (parts[3] === 'files') {
+        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
         const backup = url.searchParams.get('backup');
         const path = url.searchParams.get('path');
@@ -164,10 +165,10 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
           return body === undefined ? json(res, 404, { error: 'unknown version' }) : text(res, 200, body);
         }
         if (path) {
-          const body = readCurrent(parsed.events, path);
+          const body = readCurrent(parsed.events, path, session?.cwd);
           return body === undefined ? json(res, 404, { error: 'file not tracked or missing' }) : text(res, 200, body);
         }
-        return json(res, 200, trackedFiles(parsed.events));
+        return json(res, 200, trackedFiles(parsed.events, session?.cwd));
       }
     }
     return json(res, 404, { error: 'not found' });
