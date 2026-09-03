@@ -71,7 +71,8 @@ function firstUserText(head: string): string | undefined {
       const rec = JSON.parse(line);
       const c = rec.message?.content;
       const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b: any) => b?.type === 'text')?.text : undefined;
-      if (typeof text === 'string' && text.trim()) return text.trim().slice(0, 120);
+      // system-injected caveats and command wrappers start with a tag; a person's prompt does not
+      if (typeof text === 'string' && text.trim() && !text.trim().startsWith('<')) return text.trim().slice(0, 120);
     } catch {
       // partial line at the 64KB boundary
     }
