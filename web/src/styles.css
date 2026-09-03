@@ -400,3 +400,20 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .hljs-title, .hljs-title.function_, .hljs-title.class_ { color: var(--text); font-weight: 500; }
 .hljs-type, .hljs-variable, .hljs-params { color: var(--text-2); }
 .hljs-punctuation, .hljs-operator { color: var(--text-2); }
+
+/* ---------- project rows in the sidebar ---------- */
+.group.project { margin-top: 2px; }
+.prow { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: start; }
+.prow.sel { background: var(--sel); box-shadow: inset 2px 0 0 var(--accent); }
+.prow:hover { background: var(--hover); }
+.twist { display: grid; place-items: center; height: 34px; color: var(--text-3); }
+.twist:hover { color: var(--text); }
+.pname { display: block; width: 100%; text-align: left; padding: 7px 16px 7px 0; }
+.pname .t { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pname .m { display: block; color: var(--text-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-dot { color: var(--live); }
+.group.project .sess { padding-left: 34px; }
+.ctx-line.day { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--line); align-items: baseline; }
+.ctx-line.day .n { font-family: var(--font-mono); color: var(--text-3); }
+.ctx-line.day .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chapter .c.also { color: var(--accent); }

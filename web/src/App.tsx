@@ -8,6 +8,8 @@ import { Agents } from './views/Agents';
 import { Learn } from './views/Learn';
 import { Context } from './views/Context';
 import { Setup } from './views/Setup';
+import { Project } from './views/Project';
+import type { Project as ProjectRow } from '@agenttrace/shared';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
@@ -31,6 +33,9 @@ export function App() {
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
   const [setup, setSetup] = useState(false);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [openProject, setOpenProject] = useState<string>();
+  const [showOther, setShowOther] = useState(false);
   const [hooks, setHooks] = useState<any>();
   const [commits, setCommits] = useState<any[]>([]);
   const socket = useRef<ReturnType<typeof openSocket>>();
@@ -58,9 +63,24 @@ export function App() {
     };
   }, []);
 
+  // The project index is built from every transcript, so it is fetched once and on a slow timer.
+  useEffect(() => {
+    const load = () => fetch('/api/projects').then((r) => (r.ok ? r.json() : [])).then(setProjects).catch(() => setProjects([]));
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+
   const select = (id: string) => {
+    setOpenProject(undefined);
+    setSetup(false);
     dispatch({ type: 'select', id });
     socket.current?.subscribe(id);
+  };
+
+  const selectProject = (root: string) => {
+    setSetup(false);
+    setOpenProject(root);
   };
 
   const current = s.sessions.find((x) => x.id === s.selected);
@@ -75,21 +95,22 @@ export function App() {
     fetch(`/api/sessions/${id}/commits`).then((r) => (r.ok ? r.json() : [])).then(setCommits).catch(() => setCommits([]));
   }, [s.selected, tick]);
 
-  const groups = useMemo(() => {
+  // The sidebar lists projects, one per repository. Scratchpads and the tool's own folders are
+  // real places work happened, so they are kept, but folded away under "Other places".
+  const { repos, others } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? s.sessions.filter((x) => x.title.toLowerCase().includes(q) || project(x).toLowerCase().includes(q)) : s.sessions;
-    const live = list.filter((x) => x.live);
-    const byProject = new Map<string, Session[]>();
-    for (const x of list) {
-      if (x.live) continue;
-      const p = project(x);
-      byProject.set(p, [...(byProject.get(p) ?? []), x]);
-    }
-    const out: { name: string; items: Session[] }[] = [];
-    if (live.length) out.push({ name: 'Live now', items: live });
-    for (const [name, items] of [...byProject.entries()].sort((a, b) => (a[1][0].updatedAt < b[1][0].updatedAt ? 1 : -1))) out.push({ name, items });
-    return out;
-  }, [s.sessions, query]);
+    const match = (p: ProjectRow) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q);
+    const list = projects.filter(match);
+    return {
+      repos: list.filter((p) => p.kind === 'repo' || p.kind === 'folder'),
+      others: list.filter((p) => p.kind === 'scratch' || p.kind === 'config'),
+    };
+  }, [projects, query]);
+
+  const sessionsOf = useMemo(() => {
+    const byId = new Map(s.sessions.map((x) => [x.id, x]));
+    return (p: ProjectRow) => p.sessions.map((id) => byId.get(id)).filter((x): x is Session => !!x).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  }, [s.sessions]);
 
   const totals = useMemo(() => {
     let output = 0, cacheRead = 0, calls = 0, failed = 0;
@@ -114,34 +135,55 @@ export function App() {
         <div className="search">
           <input
             type="search"
-            placeholder="Filter by title or project"
+            placeholder="Filter projects"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Filter sessions"
+            aria-label="Filter projects"
           />
         </div>
         <nav className="list">
-          {s.sessions.length === 0 && (
+          {projects.length === 0 && s.sessions.length === 0 && (
             <div className="empty small">
               No transcripts found. The server reads <code>~/.claude/projects</code>; set <code>CLAUDE_CONFIG_DIR</code> if yours lives elsewhere.
             </div>
           )}
-          {groups.map((g) => (
-            <div className="group" key={g.name}>
-              <button className="ghead" onClick={() => setClosed({ ...closed, [g.name]: !closed[g.name] })} aria-expanded={!closed[g.name]}>
-                <span className={`chev ${closed[g.name] ? 'closed' : ''}`} aria-hidden />
-                {g.name}
-                <span className="n">{g.items.length}</span>
+          {projects.length === 0 && s.sessions.length > 0 && <div className="empty small">Building the project index…</div>}
+          {repos.map((p) => (
+            <ProjectGroup
+              key={p.root}
+              p={p}
+              open={!closed[p.root]}
+              sessions={sessionsOf(p)}
+              selectedProject={openProject}
+              selectedSession={s.selected}
+              onToggle={() => setClosed({ ...closed, [p.root]: !closed[p.root] })}
+              onProject={selectProject}
+              onSession={select}
+            />
+          ))}
+          {others.length > 0 && (
+            <div className="group">
+              <button className="ghead" onClick={() => setShowOther(!showOther)} aria-expanded={showOther}>
+                <span className={`chev ${showOther ? '' : 'closed'}`} aria-hidden />
+                Other places
+                <span className="n">{others.length}</span>
               </button>
-              {!closed[g.name] &&
-                g.items.map((x) => (
-                  <button key={x.id} className={`sess ${x.id === s.selected ? 'sel' : ''}`} onClick={() => select(x.id)} aria-current={x.id === s.selected ? 'true' : undefined}>
-                    <span className="t">{x.title}</span>
-                    <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
-                  </button>
+              {showOther &&
+                others.map((p) => (
+                  <ProjectGroup
+                    key={p.root}
+                    p={p}
+                    open={!closed[p.root]}
+                    sessions={sessionsOf(p)}
+                    selectedProject={openProject}
+                    selectedSession={s.selected}
+                    onToggle={() => setClosed({ ...closed, [p.root]: !closed[p.root] })}
+                    onProject={selectProject}
+                    onSession={select}
+                  />
                 ))}
             </div>
-          ))}
+          )}
         </nav>
         <div className="foot">
           <span><i className="dot" style={{ color: s.connected ? 'var(--ok)' : 'var(--fail)' }} />{s.connected ? 'Server connected' : 'Server offline'}</span>
@@ -155,10 +197,12 @@ export function App() {
       <main className="main" id="main" tabIndex={-1}>
         {setup ? (
           <Setup onClose={() => setSetup(false)} />
+        ) : openProject ? (
+          <Project root={openProject} onOpenSession={select} onOpenProject={selectProject} />
         ) : !current ? (
           <div className="empty">
-            <h3>Choose a session.</h3>
-            A live session shows what is happening now, then its turns. A past one shows what it amounted to, then its turns from the first. Every tool call is explained the first time it appears; the question mark brings the explanation back.
+            <h3>Choose a project.</h3>
+            A project is one repository, and its page merges every turn from every session that edited it. Open a project for the whole story, or one of its sessions for a single sitting.
           </div>
         ) : (
           <>
@@ -235,4 +279,37 @@ function ago(iso: string): string {
   if (h < 24) return `${h} h ago`;
   const d = Math.round(h / 24);
   return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+/** One project in the sidebar: its own row, and its sessions beneath when opened. */
+function ProjectGroup({ p, open, sessions, selectedProject, selectedSession, onToggle, onProject, onSession }: {
+  p: ProjectRow;
+  open: boolean;
+  sessions: Session[];
+  selectedProject?: string;
+  selectedSession?: string;
+  onToggle: () => void;
+  onProject: (root: string) => void;
+  onSession: (id: string) => void;
+}) {
+  return (
+    <div className="group project">
+      <div className={`prow ${selectedProject === p.root ? 'sel' : ''}`}>
+        <button className="twist" onClick={onToggle} aria-expanded={open} aria-label={open ? `Hide sessions of ${p.name}` : `Show sessions of ${p.name}`}>
+          <span className={`chev ${open ? '' : 'closed'}`} aria-hidden />
+        </button>
+        <button className="pname" onClick={() => onProject(p.root)} title={p.root} aria-current={selectedProject === p.root ? 'true' : undefined}>
+          <span className="t">{p.live && <i className="dot pulse live-dot" />}{p.name}</span>
+          <span className="m">{p.turns} turns · {p.sessions.length} session{p.sessions.length === 1 ? '' : 's'} · {ago(p.lastTs)}</span>
+        </button>
+      </div>
+      {open &&
+        sessions.map((x) => (
+          <button key={x.id} className={`sess ${x.id === selectedSession ? 'sel' : ''}`} onClick={() => onSession(x.id)} aria-current={x.id === selectedSession ? 'true' : undefined}>
+            <span className="t">{x.title}</span>
+            <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
+          </button>
+        ))}
+    </div>
+  );
 }
