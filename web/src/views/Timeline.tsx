@@ -109,9 +109,13 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
       if (!open) continue;
       // commits made while this turn was running belong to it; the last turn also owns later ones
       const next = turns[t.n];
-      const mine = commits.filter((c) => c.ts >= t.startTs && (!next || c.ts < next.startTs));
-      for (const c of mine) out.push({ key: `commit:${c.sha}`, kind: 'commit', commit: c });
+      const mine = commits.filter((c) => c.ts >= t.startTs && (!next || c.ts < next.startTs)).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+      let ci = 0;
+      const flush = (upTo: string) => {
+        while (ci < mine.length && (!upTo || mine[ci].ts <= upTo)) { out.push({ key: `commit:${mine[ci].sha}`, kind: 'commit', commit: mine[ci] }); ci++; }
+      };
       for (const e of t.events) {
+        flush(e.ts); // commits interleave with events by clock time
         switch (e.kind) {
           case 'assistant_text': out.push({ key: e.id, kind: 'assistant', ev: e }); break;
           case 'tool_call': out.push({ key: e.id, kind: 'tool', ev: e, result: results.get(e.toolUseId), agent: agentByTool.get(e.toolUseId), first: firstOf.get(e.name) === e.id }); break;
@@ -120,6 +124,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
           default: break;
         }
       }
+      flush('');
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
