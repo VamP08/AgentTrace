@@ -1,8 +1,11 @@
 // Git history of the folder a session ran in, joined to the session by time. No library: the
-// git binary already exists wherever there is a repository.
+// git binary already exists wherever there is a repository. A repository whose folder is gone
+// answers from the archived copy of its default-branch log.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { archivedCommits } from './archive.js';
+import { repoOf } from './projects.js';
 
 export interface Commit {
   sha: string;
@@ -32,23 +35,36 @@ export function defaultBranch(cwd: string): string {
   return 'HEAD';
 }
 
-const SEP = '';
+const RECORD = '\x1e';
+const FIELD = '\x1f';
 
-/** Commits in [since, until], newest first. Empty when the folder is not a repository. */
-export function commitsBetween(cwd: string, since: string, until: string): Commit[] {
-  if (!cwd || !existsSync(join(cwd, '.git')) && !isInsideRepo(cwd)) return [];
+/**
+ * Commits in [since, until], newest first. Empty when the folder is not a repository. When the
+ * folder is gone and a claudeRoot is given, the archived log answers instead, default branch only.
+ */
+export function commitsBetween(cwd: string, since: string, until: string, claudeRoot?: string): Commit[] {
+  if (!cwd) return [];
+  if (!existsSync(cwd)) {
+    const log = claudeRoot ? archivedCommits(claudeRoot, cwd) : undefined;
+    if (!log) return [];
+    return log.commits
+      .filter((c) => c.ts >= since && c.ts <= until)
+      .map((c) => ({ sha: c.sha.slice(0, 7), ts: c.ts, subject: c.subject, files: c.files, merged: true }))
+      .sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  }
+  if (!existsSync(join(cwd, '.git')) && !isInsideRepo(cwd)) return [];
   let out: string;
   try {
     // every local branch and the default branch, so branch work appears and can be marked
-    out = execFileSync('git', ['log', '--branches', defaultBranch(cwd), `--since=${since}`, `--until=${until}`, `--format=${SEP}%h%x1f%cI%x1f%s`, '--numstat', '--no-merges'], { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, maxBuffer: 50_000_000 });
+    out = execFileSync('git', ['log', '--branches', defaultBranch(cwd), `--since=${since}`, `--until=${until}`, `--format=${RECORD}%h${FIELD}%cI${FIELD}%s`, '--numstat', '--no-merges'], { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, maxBuffer: 50_000_000 });
   } catch {
     return [];
   }
   const commits: Commit[] = [];
-  for (const block of out.split(SEP)) {
+  for (const block of out.split(RECORD)) {
     if (!block.trim()) continue;
     const [head, ...rest] = block.trim().split('\n');
-    const [sha, ts, subject] = head.split('');
+    const [sha, ts, subject] = head.split(FIELD);
     if (!sha) continue;
     const files = rest
       .map((l) => l.split('\t'))
@@ -71,7 +87,11 @@ function isAncestor(cwd: string, sha: string, branch: string): boolean {
   }
 }
 
-/** Every repository a session worked in: its cwd if that is one, plus the repos holding the files it touched, most-touched first. */
+/**
+ * Every repository a session worked in: its cwd if that is one, plus the repos holding the files
+ * it touched, most-touched first. A folder that is gone still names its repository through the
+ * registry, so its archived log can answer.
+ */
 export function gitRootsFor(cwd: string, touched: string[] = []): string[] {
   const candidates = new Map<string, number>();
   candidates.set(cwd, Infinity);
@@ -81,13 +101,16 @@ export function gitRootsFor(cwd: string, touched: string[] = []): string[] {
   }
   const roots = new Map<string, number>();
   for (const [dir, n] of [...candidates.entries()].sort((a, b) => b[1] - a[1])) {
-    if (!existsSync(dir)) continue;
-    let top: string;
-    try {
-      top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim();
-    } catch {
-      continue;
+    let top: string | null;
+    if (!existsSync(dir)) top = repoOf(dir);
+    else {
+      try {
+        top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim();
+      } catch {
+        continue;
+      }
     }
+    if (!top) continue;
     roots.set(top, (roots.get(top) ?? 0) + (n === Infinity ? 1 : n));
   }
   return [...roots.entries()].sort((a, b) => b[1] - a[1]).map(([r]) => r);

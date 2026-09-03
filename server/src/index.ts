@@ -118,7 +118,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const detail = projectDetail(id, facts, sessions, index);
       if (!detail) return json(res, 404, { error: 'unknown project' });
       if (parts.length === 3) return json(res, 200, detail);
-      if (parts[3] === 'dossier') return text(res, 200, await buildDossier(detail, sessions, recordFor(detail)));
+      if (parts[3] === 'dossier') return text(res, 200, await buildDossier(detail, sessions, recordFor(detail), claudeRoot));
       if (parts[3] !== 'record') return json(res, 404, { error: 'not found' });
       if (detail.recordMissing) return json(res, 200, { present: false, missing: detail.recordRoot });
       const record = recordFor(detail);
@@ -139,7 +139,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const index = foldProjects(facts, sessions);
       const found = index.projects.find((x) => canon(x.root) === root);
       const detail = (found && projectDetail(found.id, facts, sessions, index)) || bareProject(root);
-      return text(res, 200, await buildDossier(detail, sessions, recordFor(detail)));
+      return text(res, 200, await buildDossier(detail, sessions, recordFor(detail), claudeRoot));
     }
     if (parts[1] === 'sessions' && parts.length === 2) {
       const sessions = discoverSessions(claudeRoot);
@@ -169,7 +169,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         // a little slack either side: clocks and the last commit after the final line
         const since = new Date(new Date(session.startedAt).getTime() - 60_000).toISOString();
         const until = new Date(new Date(session.updatedAt).getTime() + 30 * 60_000).toISOString();
-        const all = repos.flatMap((repo) => commitsBetween(repo, since, until).map((c) => ({ ...c, repo: basename(repo) })));
+        const all = repos.flatMap((repo) => commitsBetween(repo, since, until, claudeRoot).map((c) => ({ ...c, repo: basename(repo) })));
         return json(res, 200, all.sort((a, b) => (a.ts < b.ts ? 1 : -1)));
       }
       if (parts[3] === 'record') {

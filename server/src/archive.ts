@@ -1,9 +1,14 @@
 // The archive: AgentTrace's own copy of every session it has indexed. The coding tool deletes
 // transcripts after its retention period (30 days by default); the archive is what makes a
 // session outlive that. Copies are made when a session is indexed and refreshed while it grows.
-import { cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+// The same folder keeps each repository's default-branch log, so commits survive a deleted
+// working copy the way sessions survive the tool's cleanup.
+import { execFileSync } from 'node:child_process';
+import { cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Session } from '@agenttrace/shared';
+import { defaultBranch } from './git.js';
+import { keyOf } from './repos.js';
 
 export function archiveRoot(claudeRoot: string): string {
   return join(claudeRoot, 'agenttrace', 'archive');
@@ -97,4 +102,86 @@ export function archiveStats(claudeRoot: string): { sessions: number; bytes: num
   };
   walk(root);
   return { sessions, bytes, root };
+}
+
+/** One commit of a repository's default branch, as kept in the archive. */
+export interface ArchivedCommit {
+  sha: string;
+  ts: string;
+  subject: string;
+  body: string;
+  files: { path: string; added: number; removed: number }[];
+}
+
+export interface ArchivedLog {
+  root: string;
+  branch: string;
+  /** the commit the branch pointed at when the copy was made */
+  head: string;
+  archivedAt: string;
+  commits: ArchivedCommit[];
+}
+
+function logPath(claudeRoot: string, root: string): string {
+  return join(archiveRoot(claudeRoot), 'git', keyOf(root).replace(/[^a-z0-9]+/g, '-') + '.json');
+}
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 20_000, windowsHide: true, maxBuffer: 64 * 1024 * 1024 }).trim();
+}
+
+/** The archived log of a repository, or undefined when none was ever made. */
+export function archivedCommits(claudeRoot: string, root: string): ArchivedLog | undefined {
+  try {
+    const raw = JSON.parse(readFileSync(logPath(claudeRoot, root), 'utf8'));
+    return raw && Array.isArray(raw.commits) ? (raw as ArchivedLog) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Copy a repository's default-branch log into the archive when the branch has moved since the
+ * last copy. One `rev-parse` per pass when nothing changed; the full log only when it did.
+ * Returns true when a copy was written.
+ */
+export function archiveLog(claudeRoot: string, root: string): boolean {
+  if (!existsSync(root)) return false;
+  let branch: string, head: string;
+  try {
+    branch = defaultBranch(root);
+    head = git(root, ['rev-parse', branch]);
+  } catch {
+    return false; // not a repository, or no commits yet
+  }
+  const have = archivedCommits(claudeRoot, root);
+  if (have && have.head === head) return false;
+  let out: string;
+  try {
+    // \x1d starts a record, \x1f separates its fields, \x1e ends them; numstat lines follow.
+    out = git(root, ['log', branch, '--no-merges', '--date=iso-strict', '--format=%x1d%H%x1f%cI%x1f%s%x1f%b%x1e', '--numstat']);
+  } catch {
+    return false;
+  }
+  const commits: ArchivedCommit[] = [];
+  for (const rec of out.split('\x1d')) {
+    if (!rec.trim()) continue;
+    const [header, rest = ''] = rec.split('\x1e');
+    const [sha, ts, subject, body = ''] = header.split('\x1f');
+    if (!sha) continue;
+    const files = rest
+      .split('\n')
+      .map((l) => l.split('\t'))
+      .filter((p) => p.length === 3)
+      .map(([a, r, path]) => ({ path, added: a === '-' ? 0 : Number(a), removed: r === '-' ? 0 : Number(r) }));
+    commits.push({ sha, ts, subject, body: body.trim(), files });
+  }
+  const log: ArchivedLog = { root, branch, head, archivedAt: new Date().toISOString(), commits };
+  try {
+    mkdirSync(dirname(logPath(claudeRoot, root)), { recursive: true });
+    writeFileSync(logPath(claudeRoot, root), JSON.stringify(log));
+    return true;
+  } catch {
+    return false;
+  }
 }

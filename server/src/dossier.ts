@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { STACK, type ProjectDetail, type ProjectRecord, type Session } from '@agenttrace/shared';
+import { archivedCommits } from './archive.js';
 import { discoverAgents } from './discover.js';
 import { defaultBranch } from './git.js';
 import { trackedFiles } from './fileHistory.js';
@@ -169,11 +170,15 @@ function ownerOf(c: LogLine, windows: Window[]): Window | undefined {
   return best;
 }
 
-export async function buildDossier(p: ProjectDetail, sessions: Map<string, Session>, record?: ProjectRecord): Promise<string> {
+export async function buildDossier(p: ProjectDetail, sessions: Map<string, Session>, record?: ProjectRecord, claudeRoot?: string): Promise<string> {
   const out: string[] = [];
   const present = existsSync(p.root);
-  const branch = present ? defaultBranch(p.root) : '';
-  const commits = present ? commitLog(p.root, branch) : [];
+  // A deleted working copy still has its default-branch log in the archive.
+  const archived = !present && claudeRoot ? archivedCommits(claudeRoot, p.root) : undefined;
+  const branch = present ? defaultBranch(p.root) : archived?.branch ?? '';
+  const commits: LogLine[] = present
+    ? commitLog(p.root, branch)
+    : (archived?.commits ?? []).map((c) => ({ sha: c.sha.slice(0, 7), date: c.ts, subject: c.subject, body: c.body })).reverse();
   const tagList = present ? tags(p.root) : [];
   const recordDir = p.recordRoot && !p.recordMissing ? p.recordRoot : undefined;
   const clash = recordDir ? clashes(recordDir) : [];
@@ -205,7 +210,10 @@ export async function buildDossier(p: ProjectDetail, sessions: Map<string, Sessi
     out.push(`- Commits on ${branch}: ${commits.length}${commits.length ? `, from ${day(commits[0].date)} to ${day(commits[commits.length - 1].date)}` : ''}; ${tagList.length} tags${tagList.length ? ` (${tagList.slice(0, 20).join(', ')})` : ''}`);
     if (commits.length && list.length && day(commits[0].date) < day(list[0].startedAt)) out.push(`- The commits before ${day(list[0].startedAt)} have no archived session: the tool had removed those transcripts before they were indexed.`);
     out.push(`- Commits whose message states a reason: ${reasoned.length}${reasoned.length ? ' (listed at the end)' : ''}`);
-  } else out.push('- Working copy not on disk: no commits, tags or documents can be read.');
+  } else if (archived) {
+    out.push(`- Working copy not on disk. Commits on ${branch} from the archived log: ${commits.length}${commits.length ? `, from ${day(commits[0].date)} to ${day(commits[commits.length - 1].date)}` : ''}, copied ${day(archived.archivedAt)}; tags and documents in the repository cannot be read.`);
+    out.push(`- Commits whose message states a reason: ${reasoned.length}${reasoned.length ? ' (listed at the end)' : ''}`);
+  } else out.push('- Working copy not on disk and no archived log: no commits, tags or documents can be read.');
   out.push(`- Documents already kept for the project: ${docs.length ? docs.join(', ') : 'none'}`);
   out.push(`- Decision records found: ${decisionDocs.length ? decisionDocs.join(', ') : 'none'}`);
   out.push(`- Dated status log found: ${statusLogs.length ? statusLogs.join(', ') : 'none'}`);
@@ -320,7 +328,7 @@ export async function buildDossier(p: ProjectDetail, sessions: Map<string, Sessi
   else out.push(digests.map((d) => d.lines.join('\n')).join('\n\n'));
   out.push('');
 
-  if (present) {
+  if (present || commits.length) {
     const rows = commits.slice(-MAX_COMMITS);
     out.push(`## Commits on ${branch}, oldest first`, '');
     if (!rows.length) out.push('No commits.');

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session, SessionLink } from '@agenttrace/shared';
 import { discoverSessions } from './discover.js';
-import { archiveSession } from './archive.js';
+import { archiveLog, archiveSession } from './archive.js';
 import { findManifest } from './docs.js';
 import { keyOf, loadRegistry, lookup, saveRegistry, upsert, type Registry } from './repos.js';
 import { parseFile } from './parse.js';
@@ -283,6 +283,9 @@ function rememberRepos(claudeRoot: string, facts: IndexFile) {
     if (!existsSync(root)) continue;
     const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
     upsert(registry, { root, remote: remoteOf(root), rootCommit: rootCommitOf(root), record: manifest?.root, project: manifest?.manifest.project, seen: now });
+    // The default-branch log goes into the archive beside the sessions, so a repository whose
+    // folder is later deleted keeps its commits. One rev-parse per pass when nothing moved.
+    archiveLog(claudeRoot, root);
   }
   saveRegistry(claudeRoot, registry);
 }
