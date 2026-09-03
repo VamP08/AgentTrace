@@ -17,9 +17,17 @@ const port = Number(process.env.AGENTTRACE_PORT || 4747);
 // ponytail: session id -> project slug, refreshed on every list call; a full index can wait.
 const slugById = new Map<string, string>();
 
+// No CORS headers on purpose: the page is served same-origin through Vite's proxy, and a
+// wildcard here would let any website open in the browser read transcripts and source files.
 function json(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+  res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
+}
+
+/** Refuse requests whose Host is not the loopback address, which blocks DNS-rebinding tricks. */
+function localHost(req: IncomingMessage): boolean {
+  const host = (req.headers.host ?? '').replace(/:\d+$/, '');
+  return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
 }
 
 function slugFor(id: string): string | undefined {
@@ -42,13 +50,14 @@ async function history(slug: string, id: string): Promise<ParsedFile> {
 }
 
 function text(res: ServerResponse, status: number, body: string) {
-  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' });
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
   res.end(body);
 }
 
 export async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const parts = url.pathname.split('/').filter(Boolean);
+  if (!localHost(req)) return json(res, 403, { error: 'local access only' });
   try {
     if (parts[0] !== 'api') return json(res, 404, { error: 'not found' });
     if (parts[1] === 'sessions' && parts.length === 2) {
@@ -98,7 +107,8 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    if (!localHost(req)) return void ws.close(1008, 'local access only');
     ws.on('message', async (raw) => {
       let msg: ClientMessage;
       try {
