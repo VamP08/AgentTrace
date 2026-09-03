@@ -7,6 +7,7 @@ import { Diffs } from './views/Diffs';
 import { Agents } from './views/Agents';
 import { Learn } from './views/Learn';
 import { Context } from './views/Context';
+import { Setup } from './views/Setup';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
@@ -29,6 +30,7 @@ export function App() {
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
+  const [setup, setSetup] = useState(false);
   const [hooks, setHooks] = useState<any>();
   const [commits, setCommits] = useState<any[]>([]);
   const socket = useRef<ReturnType<typeof openSocket>>();
@@ -142,6 +144,7 @@ export function App() {
         </nav>
         <div className="foot">
           <span><i className="dot" style={{ color: s.connected ? 'var(--ok)' : 'var(--fail)' }} />{s.connected ? 'Server connected' : 'Server offline'}</span>
+          <button className="btn sm quiet" onClick={() => setSetup(true)}>Setup</button>
           <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
             {theme === 'dark' ? 'Light theme' : 'Dark theme'}
           </button>
@@ -149,7 +152,9 @@ export function App() {
       </aside>
 
       <main className="main">
-        {!current ? (
+        {setup ? (
+          <Setup onClose={() => setSetup(false)} />
+        ) : !current ? (
           <div className="empty">
             <h3>Choose a session.</h3>
             A live session shows what is happening now, then its turns. A past one shows what it amounted to, then its turns from the first. Every tool call is explained the first time it appears; the question mark brings the explanation back.

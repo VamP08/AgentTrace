@@ -2,6 +2,8 @@
 // Plain node:http; the HTTP surface is four GET routes.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
@@ -57,12 +59,48 @@ function text(res: ServerResponse, status: number, body: string) {
   res.end(body);
 }
 
+const repoRoot = join(fileURLToPath(import.meta.url), '..', '..', '..');
+const skillSource = join(repoRoot, 'skill', 'SKILL.md');
+const skillTarget = join(claudeRoot, 'skills', 'agenttrace', 'SKILL.md');
+
+/** What a new user needs to know and do: where the app reads from, what is installed, what to paste. */
+function setupStatus() {
+  let hooksInstalled = false;
+  try {
+    hooksInstalled = readFileSync(join(claudeRoot, 'settings.json'), 'utf8').includes('log-event.mjs');
+  } catch {
+    // no settings file yet
+  }
+  return {
+    claudeRoot,
+    projectsDir: join(claudeRoot, 'projects'),
+    skillInstalled: existsSync(skillTarget),
+    hooksInstalled,
+    hookInstaller: join(repoRoot, 'hooks', 'install-settings.mjs'),
+    snippet: [
+      '# AgentTrace learning record',
+      'This project keeps a record for AgentTrace. `agenttrace.json` at the repo root names the folder.',
+      'Follow the `agenttrace` skill: write a learning entry when a library, pattern, algorithm, design',
+      'choice or piece of math enters the code; a decision entry when options were weighed; a journal',
+      'entry at the end of the session. Same turn as the code. Explain for a reader who does not program.',
+    ].join('\n'),
+    manifestExample: JSON.stringify({ contract: 1, project: 'YourProject', record: 'C:/path/to/your/notes/YourProject' }, null, 2),
+  };
+}
+
 export async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const parts = url.pathname.split('/').filter(Boolean);
   if (!localHost(req)) return json(res, 403, { error: 'local access only' });
   try {
     if (parts[0] !== 'api') return json(res, 404, { error: 'not found' });
+    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, setupStatus());
+    if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
+      if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
+      mkdirSync(join(skillTarget, '..'), { recursive: true });
+      copyFileSync(skillSource, skillTarget);
+      return json(res, 200, setupStatus());
+    }
     if (parts[1] === 'sessions' && parts.length === 2) {
       const sessions = discoverSessions(claudeRoot);
       for (const s of sessions) slugById.set(s.id, s.projectSlug);

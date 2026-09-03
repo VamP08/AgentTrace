@@ -113,6 +113,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(231, 176, 74, 0.18); } }
 .side .foot { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: center; color: var(--text-3); font-size: 12px; }
 .side .foot .btn { margin-left: auto; }
+.side .foot .btn + .btn { margin-left: 0; }
 
 .main { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
 .head { padding: 14px 24px 0; border-bottom: 1px solid var(--line); background: var(--bg); }
@@ -325,3 +326,9 @@ button.chip:hover { background: var(--hover); color: var(--text); }
 .ctx-item summary { padding: 6px 10px; cursor: pointer; color: var(--text-2); }
 .ctx-item summary .c { color: var(--text-3); font-size: 12px; margin-left: 8px; }
 .ctx-item pre { padding: 8px 10px; border-top: 1px solid var(--line); max-height: 320px; overflow: auto; }
+
+/* ---------- setup ---------- */
+.setup h3 { font-size: 14px; margin: 22px 0 6px; display: flex; gap: 10px; align-items: center; }
+.setup .doc-h { justify-content: space-between; }
+.setup .c { color: var(--text-3); font-size: 12px; }
+.setup .btn { margin: 4px 0 8px; }
