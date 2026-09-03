@@ -35,9 +35,10 @@ export function Learn({ sessionId, cwd }: Props) {
     setRecord(undefined);
     fetch(`/api/sessions/${sessionId}/record`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((r: ProjectRecord | null) => {
-        setRecord(r);
-        if (r) setRead(loadRead(r.project));
+      .then((r: (ProjectRecord & { present?: boolean }) | null) => {
+        const rec = r && r.present === false ? null : r;
+        setRecord(rec);
+        if (rec) setRead(loadRead(rec.project));
       })
       .catch(() => setRecord(null));
   }, [sessionId]);
@@ -61,8 +62,9 @@ export function Learn({ sessionId, cwd }: Props) {
 
   const goNext = () => {
     if (!entry) return;
+    markRead(entry.slug, true);
     const i = ordered.findIndex((l) => l.slug === entry.slug);
-    const next = ordered.slice(i + 1).find((l) => !read.has(l.slug)) ?? ordered[i + 1];
+    const next = ordered.slice(i + 1).find((l) => !read.has(l.slug) && l.slug !== entry.slug) ?? ordered[i + 1];
     if (next) setPick(next.slug);
   };
 
@@ -71,8 +73,9 @@ export function Learn({ sessionId, cwd }: Props) {
     return (
       <div className="empty">
         <h3>No record for this project yet.</h3>
-        The Learn view reads a folder of lessons the coding tool keeps while it builds. Open Setup in the sidebar for the
-        two files to add to a project. This session's folder is <code>{cwd}</code>.
+        The Learn view reads a folder of lessons the coding tool keeps while it builds. No <code>agenttrace.json</code> was
+        found in the folder this session ran in, <code>{cwd}</code>, nor in the folders of the files it edited. Open Setup in
+        the sidebar for the two files that turn it on for a project.
       </div>
     );
   }
@@ -276,12 +279,12 @@ function Lesson({ entry, record, sessionId, isRead, onRead, onPick, onNext }: { 
           )}
           <div className="lesson-end">
             <label className="check"><input type="checkbox" checked={isRead} onChange={(e) => onRead(e.target.checked)} /> Mark as read</label>
-            <button className="btn primary" onClick={() => { onRead(true); onNext(); }}>Next lesson</button>
+            <button className="btn primary" onClick={onNext}>Next lesson</button>
           </div>
         </div>
         <nav className="toc" aria-label="On this page">
           <span className="c">On this page</span>
-          {toc.map((t) => <a key={t} href={`#sec-${slugify(t)}`}>{t}</a>)}
+          {toc.map((t) => <button key={t} onClick={() => document.getElementById(`sec-${slugify(t)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>{t}</button>)}
         </nav>
       </div>
     </article>

@@ -113,7 +113,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       if (parts[3] === 'agents') return json(res, 200, discoverAgents(claudeRoot, slug, id));
       if (parts[3] === 'hooks') {
         const h = readHookLog(claudeRoot, id);
-        return h ? json(res, 200, h) : json(res, 404, { error: 'no hook log for this session; install hooks/install-settings.mjs' });
+        return json(res, 200, h ?? { present: false, events: [], durations: {}, counts: {} });
       }
       if (parts[3] === 'commits') {
         const session = discoverSessions(claudeRoot).find((x) => x.id === id);
@@ -139,7 +139,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
         const touched = session?.cwd ? trackedFiles(parsed.events, session.cwd).map((f) => f.path) : [];
         const record = session?.cwd ? readRecord(session.cwd, touched) : undefined;
-        if (!record) return json(res, 404, { error: 'no agenttrace.json above the folder this session ran in' });
+        if (!record) return json(res, 200, { present: false });
         const file = url.searchParams.get('file');
         if (file) {
           const w = codeWindow(record.repoDir, file, url.searchParams.get('anchor') ?? undefined);

@@ -72,7 +72,7 @@ export function Diffs({ sessionId, events }: Props) {
                   onClick={() => setPick({ file: f, index: i })}
                   title={v.backupTime}
                 >
-                  v{v.version}
+                  v{v.version}<small>{clock(v.backupTime)}</small>
                 </button>
               ))}
               <button className={`ver now ${pick && pick.file.path === f.path && pick.index === 'now' ? 'sel' : ''}`} onClick={() => setPick({ file: f, index: 'now' })}>
@@ -118,6 +118,11 @@ export function Diffs({ sessionId, events }: Props) {
       </section>
     </div>
   );
+}
+
+function clock(ts: string): string {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function prefix(block: string, mark: string): string {

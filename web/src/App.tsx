@@ -71,7 +71,7 @@ export function App() {
   useEffect(() => {
     if (!s.selected) return;
     const id = s.selected;
-    fetch(`/api/sessions/${id}/hooks`).then((r) => (r.ok ? r.json() : null)).then(setHooks).catch(() => setHooks(null));
+    fetch(`/api/sessions/${id}/hooks`).then((r) => (r.ok ? r.json() : null)).then((h) => setHooks(h && h.present === false ? null : h)).catch(() => setHooks(null));
     fetch(`/api/sessions/${id}/commits`).then((r) => (r.ok ? r.json() : [])).then(setCommits).catch(() => setCommits([]));
   }, [s.selected, tick]);
 
@@ -104,6 +104,7 @@ export function App() {
 
   return (
     <div className="app">
+      <a className="skip" href="#main">Skip to the session</a>
       <aside className="side" aria-label="Sessions">
         <div className="brand">
           <span className="mark" aria-hidden />
@@ -151,7 +152,7 @@ export function App() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
         {setup ? (
           <Setup onClose={() => setSetup(false)} />
         ) : !current ? (

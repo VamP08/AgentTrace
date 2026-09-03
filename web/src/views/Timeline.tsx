@@ -95,6 +95,11 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
   }, [events]);
 
   const isOpen = (t: Turn) => openTurns[t.n] ?? (live ? t === current : t.n === 1);
+  const counts = useMemo(() => {
+    let context = 0, raw = 0;
+    for (const e of events) { if (e.kind === 'context') context++; else if (e.kind === 'raw') raw++; }
+    return { context, raw };
+  }, [events]);
 
   const rows = useMemo<Row[]>(() => {
     const seen = new Set<string>();
@@ -157,8 +162,8 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
       {slot &&
         createPortal(
           <>
-            <button className={`btn sm ${show.context ? 'on' : ''}`} onClick={() => setShow({ ...show, context: !show.context })} aria-pressed={show.context}>Context</button>
-            <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>Raw records</button>
+            <button className={`btn sm ${show.context ? 'on' : ''}`} onClick={() => setShow({ ...show, context: !show.context })} aria-pressed={show.context}>Context {counts.context}</button>
+            <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>Raw records {counts.raw}</button>
             {parseErrors > 0 && <span className="pill fail">{parseErrors} unreadable lines</span>}
             {live && (
               <button className={`btn sm ${follow ? 'on' : ''}`} onClick={() => setFollow(!follow)} aria-pressed={follow}>{follow ? 'Following' : 'Follow'}</button>

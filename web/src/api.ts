@@ -36,7 +36,9 @@ export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open
     },
     close() {
       closed = true;
-      ws?.close();
+      // Closing a socket that is still connecting makes the browser log a warning; wait for open.
+      if (ws?.readyState === WebSocket.CONNECTING) ws.addEventListener('open', () => ws?.close());
+      else ws?.close();
     },
   };
 }

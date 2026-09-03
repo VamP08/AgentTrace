@@ -115,10 +115,13 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .side .foot .btn { margin-left: auto; }
 .side .foot .btn + .btn { margin-left: 0; }
 
-.main { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.main { display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0; }
+.app { min-width: 0; }
+.skip { position: absolute; left: -9999px; top: 8px; z-index: 20; padding: 6px 10px; background: var(--accent); color: var(--accent-ink); border-radius: var(--r); }
+.skip:focus { left: 8px; }
 .head { padding: 14px 24px 0; border-bottom: 1px solid var(--line); background: var(--bg); }
 .head .row1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.head h2 { font-size: 18px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+.head h2 { font-size: 18px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(60ch, 100%); }
 .pill { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--r-s); border: 1px solid var(--line-strong); font-size: 12px; font-weight: 500; color: var(--text-2); white-space: nowrap; }
 .pill.live { color: var(--live); border-color: rgba(231, 176, 74, 0.4); }
 .pill.ok { color: var(--ok); border-color: rgba(94, 196, 143, 0.4); }
@@ -227,10 +230,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .fpath { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .file .badges { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
 .versions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-.ver { font-family: var(--font-mono); font-size: 12px; height: 22px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-s); color: var(--text-2); }
+.ver { font-family: var(--font-mono); font-size: 12px; height: 22px; gap: 6px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-s); color: var(--text-2); }
 .ver:hover { background: var(--hover); color: var(--text); }
 .ver.sel { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
 .ver.now { border-style: dashed; }
+.ver small { color: var(--text-3); font-family: var(--font-ui); }
 .diffpane { overflow: auto; min-height: 0; }
 .diffhead { display: flex; gap: 14px; align-items: center; padding: 10px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); flex-wrap: wrap; }
 .diffhead .explain { margin: 0; padding: 0; border: 0; background: none; }
@@ -351,8 +355,8 @@ button.chip:hover { background: var(--hover); color: var(--text); }
 .lesson-body li { font-size: 14px; line-height: 1.65; margin-bottom: 4px; }
 .lesson-body a { color: var(--accent); }
 .toc { position: sticky; top: 16px; display: grid; gap: 6px; font-size: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
-.toc a { color: var(--text-3); text-decoration: none; }
-.toc a:hover { color: var(--text); }
+.toc button { color: var(--text-3); text-align: left; }
+.toc button:hover { color: var(--text); }
 .codehead { display: flex; gap: 12px; align-items: baseline; margin-bottom: 4px; flex-wrap: wrap; }
 .codehead .c { color: var(--text-3); font-size: 12px; }
 pre.code { padding: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); margin: 0 0 12px; overflow-x: auto; }
