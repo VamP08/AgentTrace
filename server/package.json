@@ -1,0 +1,23 @@
+{
+  "name": "@agenttrace/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agenttrace/shared": "*",
+    "chokidar": "^4.0.3",
+    "gray-matter": "^4.0.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0"
+  }
+}

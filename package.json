@@ -1,0 +1,27 @@
+{
+  "name": "agenttrace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Live, explained view of a Claude Code session: what went in, what came out, and why.",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace server & npm run dev --workspace web",
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
+  }
+}
