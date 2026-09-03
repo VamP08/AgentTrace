@@ -28,7 +28,9 @@ describe('discoverSessions', () => {
   it('lists sessions with title, cwd, start time and live flag', () => {
     const { root, id } = fakeRoot();
     const [s] = discoverSessions(root);
-    expect(s).toMatchObject({ id, projectSlug: 'e--Work-demo', cwd: 'e:\\Work\\demo', title: 'Build a thing', startedAt: '2026-09-03T01:00:00.000Z', live: true });
+    expect(s).toMatchObject({ id, projectSlug: 'e--Work-demo', cwd: 'e:\\Work\\demo', title: 'Build a thing', startedAt: '2026-09-03T01:00:00.000Z', live: true, archived: false });
+    expect(s.file).toBe(join(root, 'projects', 'e--Work-demo', `${id}.jsonl`));
+    expect(s.dir).toBe(join(root, 'projects', 'e--Work-demo', id));
     expect(s.bytes).toBeGreaterThan(0);
   });
   it('returns nothing for a root without projects', () => {
@@ -39,7 +41,7 @@ describe('discoverSessions', () => {
 describe('discoverAgents', () => {
   it('joins agent transcripts to their meta', () => {
     const { root, id } = fakeRoot();
-    const agents = discoverAgents(root, 'e--Work-demo', id);
+    const agents = discoverAgents(join(root, 'projects', 'e--Work-demo', id));
     expect(agents).toEqual([
       { agentId: 'abc123', agentType: 'Explore', description: 'Look', toolUseId: 'toolu_9', spawnDepth: 1, file: 'subagents/agent-abc123.jsonl' },
     ]);

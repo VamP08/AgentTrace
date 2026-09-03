@@ -213,7 +213,7 @@ export function App() {
             <header className="head">
               <div className="row1">
                 <h2 title={current.title}>{current.title}</h2>
-                <span className={`pill ${current.live ? 'live' : ''}`}>{current.live ? 'Live' : 'Idle'}</span>
+                <span className={`pill ${current.live ? 'live' : ''}`}>{current.live ? 'Live' : current.archived ? 'Archived copy' : 'Idle'}</span>
                 {totals.failed > 0 && <span className="pill fail">{totals.failed} failed</span>}
               </div>
               <div className="meta">

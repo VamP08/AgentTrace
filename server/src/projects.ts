@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session, SessionLink } from '@agenttrace/shared';
-import { discoverSessions, sessionFile } from './discover.js';
+import { discoverSessions } from './discover.js';
+import { archiveSession } from './archive.js';
 import { findManifest } from './docs.js';
 import { parseFile } from './parse.js';
 
@@ -198,12 +199,15 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
   const cached: IndexFile = loaded.manifests === manifestKey ? (loaded.sessions ?? {}) : {};
   const next: IndexFile = {};
   for (const s of sessions) {
+    // Every session that gets indexed also gets copied, so it outlives the coding tool's cleanup.
+    // Cheap when nothing changed: a size comparison per file.
+    archiveSession(claudeRoot, s);
     const hit = cached[s.id];
     if (hit && hit.bytes === s.bytes && hit.updatedAt === s.updatedAt) {
       next[s.id] = hit;
       continue;
     }
-    const parsed = await parseFile(sessionFile(claudeRoot, s.projectSlug, s.id), { sessionId: s.id });
+    const parsed = await parseFile(s.file, { sessionId: s.id });
     next[s.id] = sessionFacts(parsed.events, s, manifests);
   }
   saveIndex(claudeRoot, next, manifestKey);

@@ -121,6 +121,14 @@ export interface Session {
   updatedAt: string;
   bytes: number;
   live: boolean;
+  /** true when the coding tool's copy is gone and this is AgentTrace's own copy */
+  archived: boolean;
+  /** absolute path of the transcript */
+  file: string;
+  /** absolute path of the session folder: subagents, spilled tool results */
+  dir: string;
+  /** absolute path of the folder holding this session's file backups */
+  fileHistory: string;
 }
 
 export interface AgentInfo {

@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
-import { discoverAgents, discoverSessions, sessionFile } from './discover.js';
+import { discoverAgents, discoverSessions, findSession } from './discover.js';
+import { archiveSession, archiveStats, livePaths } from './archive.js';
 import { codeWindow, readRecord } from './docs.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
@@ -21,7 +22,6 @@ export const claudeRoot = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.cla
 const port = Number(process.env.AGENTTRACE_PORT || 4747);
 
 // ponytail: session id -> project slug, refreshed on every list call; a full index can wait.
-const slugById = new Map<string, string>();
 
 // No CORS headers on purpose: the page is served same-origin through Vite's proxy, and a
 // wildcard here would let any website open in the browser read transcripts and source files.
@@ -36,19 +36,14 @@ function localHost(req: IncomingMessage): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
 }
 
-function slugFor(id: string): string | undefined {
-  if (!slugById.has(id)) for (const s of discoverSessions(claudeRoot)) slugById.set(s.id, s.projectSlug);
-  return slugById.get(id);
-}
-
 const SESSION_ID = /^[0-9a-f-]{36}$/;
 
 // ponytail: per-session set of technologies already reported, so live batches only add new ones.
 const stackSeen = new Map<string, Set<string>>();
 
 /** Parse the main transcript and append derived stack events; resets the live seen-set for the session. */
-async function history(slug: string, id: string): Promise<ParsedFile> {
-  const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+async function history(file: string, id: string): Promise<ParsedFile> {
+  const parsed = await parseFile(file, { sessionId: id });
   const seen = new Set<string>();
   stackSeen.set(id, seen);
   parsed.events.push(...detectStack(parsed.events, seen));
@@ -95,7 +90,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   if (!localHost(req)) return json(res, 403, { error: 'local access only' });
   try {
     if (parts[0] !== 'api') return json(res, 404, { error: 'not found' });
-    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, setupStatus());
+    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: archiveStats(claudeRoot) });
     if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
       if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
       mkdirSync(join(skillTarget, '..'), { recursive: true });
@@ -126,22 +121,20 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
     }
     if (parts[1] === 'sessions' && parts.length === 2) {
       const sessions = discoverSessions(claudeRoot);
-      for (const s of sessions) slugById.set(s.id, s.projectSlug);
       return json(res, 200, sessions);
     }
     if (parts[1] === 'sessions' && parts.length === 4) {
       const id = parts[2];
-      const slug = SESSION_ID.test(id) ? slugFor(id) : undefined;
-      if (!slug) return json(res, 404, { error: 'unknown session' });
-      if (parts[3] === 'agents') return json(res, 200, discoverAgents(claudeRoot, slug, id));
+      const session = SESSION_ID.test(id) ? findSession(claudeRoot, id) : undefined;
+      if (!session) return json(res, 404, { error: 'unknown session' });
+      if (parts[3] === 'agents') return json(res, 200, discoverAgents(session.dir));
       if (parts[3] === 'hooks') {
         const h = readHookLog(claudeRoot, id);
         return json(res, 200, h ?? { present: false, events: [], durations: {}, counts: {} });
       }
       if (parts[3] === 'commits') {
-        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
-        if (!session?.cwd) return json(res, 404, { error: 'unknown session' });
-        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+        if (!session.cwd) return json(res, 200, []);
+        const parsed = await parseFile(session.file, { sessionId: id });
         const repos = gitRootsFor(session.cwd, trackedFiles(parsed.events, session.cwd).map((f) => f.path));
         const sha = url.searchParams.get('sha');
         if (sha) {
@@ -158,10 +151,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         return json(res, 200, all.sort((a, b) => (a.ts < b.ts ? 1 : -1)));
       }
       if (parts[3] === 'record') {
-        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
-        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
-        const touched = session?.cwd ? trackedFiles(parsed.events, session.cwd).map((f) => f.path) : [];
-        const record = session?.cwd ? readRecord(session.cwd, touched) : undefined;
+        const parsed = await parseFile(session.file, { sessionId: id });
+        const touched = session.cwd ? trackedFiles(parsed.events, session.cwd).map((f) => f.path) : [];
+        const record = session.cwd ? readRecord(session.cwd, touched) : undefined;
         if (!record) return json(res, 200, { present: false });
         const file = url.searchParams.get('file');
         if (file) {
@@ -172,26 +164,24 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       }
       if (parts[3] === 'events') {
         const agent = url.searchParams.get('agent');
-        if (!agent) return json(res, 200, await history(slug, id));
-        const info = discoverAgents(claudeRoot, slug, id).find((a) => a.agentId === agent);
+        if (!agent) return json(res, 200, await history(session.file, id));
+        const info = discoverAgents(session.dir).find((a) => a.agentId === agent);
         if (!info) return json(res, 404, { error: 'unknown agent' });
-        const file = join(claudeRoot, 'projects', slug, id, info.file);
-        return json(res, 200, await parseFile(file, { sessionId: id, agentId: agent }));
+        return json(res, 200, await parseFile(join(session.dir, info.file), { sessionId: id, agentId: agent }));
       }
       if (parts[3] === 'files') {
-        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
-        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+        const parsed = await parseFile(session.file, { sessionId: id });
         const backup = url.searchParams.get('backup');
         const path = url.searchParams.get('path');
         if (backup) {
-          const body = readVersion(claudeRoot, id, backup);
+          const body = readVersion(session.fileHistory, backup);
           return body === undefined ? json(res, 404, { error: 'unknown version' }) : text(res, 200, body);
         }
         if (path) {
-          const body = readCurrent(parsed.events, path, session?.cwd);
+          const body = readCurrent(parsed.events, path, session.cwd);
           return body === undefined ? json(res, 404, { error: 'file not tracked or missing' }) : text(res, 200, body);
         }
-        return json(res, 200, trackedFiles(parsed.events, session?.cwd));
+        return json(res, 200, trackedFiles(parsed.events, session.cwd));
       }
     }
     return json(res, 404, { error: 'not found' });
@@ -219,18 +209,20 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
       }
       if (msg.type === 'unsubscribe') return void wants.delete(ws);
       if (msg.type !== 'subscribe' || !SESSION_ID.test(msg.sessionId)) return;
-      const slug = slugFor(msg.sessionId);
-      if (!slug) return;
+      const session = findSession(claudeRoot, msg.sessionId);
+      if (!session) return;
       wants.set(ws, msg.sessionId);
       // History first, then the live stream continues from whatever the tailer sees next.
-      const h = await history(slug, msg.sessionId);
+      const h = await history(session.file, msg.sessionId);
       send(ws, { type: 'history', sessionId: msg.sessionId, events: h.events, parseErrors: h.parseErrors });
-      send(ws, { type: 'agents', sessionId: msg.sessionId, agents: discoverAgents(claudeRoot, slug, msg.sessionId) });
+      send(ws, { type: 'agents', sessionId: msg.sessionId, agents: discoverAgents(session.dir) });
     });
     ws.on('close', () => wants.delete(ws));
   });
 
   tailer.on('events', (b: TailBatch) => {
+    // a live session that changed is copied again, so the archive never lags by more than one batch
+    archiveSession(claudeRoot, { archived: false, projectSlug: b.projectSlug, id: b.sessionId, ...livePaths(claudeRoot, b.projectSlug, b.sessionId) });
     const seen = stackSeen.get(b.sessionId);
     const events = seen && !b.agentId ? [...b.events, ...detectStack(b.events, seen)] : b.events;
     for (const [ws, sid] of wants) if (sid === b.sessionId) send(ws, { type: 'events', sessionId: b.sessionId, agentId: b.agentId, events });

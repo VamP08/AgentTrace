@@ -17,6 +17,7 @@ time, by hand or by the coding session itself through a skill.
 | Helper transcripts | `<session>/subagents/agent-*.jsonl` | Each helper's own work, joined to its brief |
 | File history | `~/.claude/file-history/<session>/` | Every version of every file the session edited |
 | Hook log | `~/.claude/agenttrace/hooks/<session>.jsonl` | Tool durations, permission requests, notifications (after installing the hooks) |
+| Archive | `~/.claude/agenttrace/archive/` | AgentTrace's own copy of every session it has indexed, read once the coding tool's cleanup has removed the original |
 | Git | the repositories the session touched | Commits made during the session, joined to turns by time |
 | The record | a folder named by `agenttrace.json` | Concepts, decisions and journal entries the session wrote while building |
 

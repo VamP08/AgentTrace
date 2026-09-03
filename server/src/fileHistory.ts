@@ -28,10 +28,10 @@ export function trackedFiles(events: Event[], sessionCwd?: string): TrackedFile[
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** Read one backed-up version. The name is validated so a request cannot reach outside the folder. */
-export function readVersion(claudeRoot: string, sessionId: string, backup: string): string | undefined {
+/** Read one backed-up version from a session's file-history folder. The name is validated so a request cannot reach outside it. */
+export function readVersion(fileHistoryDir: string, backup: string): string | undefined {
   if (!BACKUP_NAME.test(backup)) return undefined;
-  const file = join(claudeRoot, 'file-history', sessionId, backup);
+  const file = join(fileHistoryDir, backup);
   if (!existsSync(file)) return undefined;
   return readFileSync(file, 'utf8');
 }

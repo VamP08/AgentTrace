@@ -10,6 +10,7 @@ interface Status {
   hookInstaller: string;
   snippet: string;
   manifestExample: string;
+  archive: { sessions: number; bytes: number; root: string };
 }
 
 export function Setup({ onClose }: { onClose: () => void }) {
@@ -38,6 +39,9 @@ export function Setup({ onClose }: { onClose: () => void }) {
           <>
             <h3>1. Where sessions are read from</h3>
             <p>Transcripts are read from <code>{st.projectsDir}</code>. To read a different folder, start the server with <code>CLAUDE_CONFIG_DIR</code> set to the folder that holds <code>projects</code>.</p>
+
+            <h3>Your copy of every session <span className="pill ok">{st.archive.sessions} archived</span></h3>
+            <p>The coding tool deletes transcripts after its retention period, 30 days unless changed. AgentTrace copies each session it indexes, with its helpers and file history, into <code>{st.archive.root}</code> ({(st.archive.bytes / 1e6).toFixed(0)} MB), and keeps reading from that copy after the original is gone. Nothing you have opened here is lost to cleanup.</p>
 
             <h3>2. Tool timings and permission events <span className={`pill ${st.hooksInstalled ? 'ok' : ''}`}>{st.hooksInstalled ? 'installed' : 'not installed'}</span></h3>
             <p>The transcript never records how long a tool took or when permission was asked. A small hook logger captures both. Install it once, from any terminal, then restart the coding tool:</p>

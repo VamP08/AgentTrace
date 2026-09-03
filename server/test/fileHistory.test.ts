@@ -45,9 +45,10 @@ describe('readVersion / readCurrent', () => {
     const root = mkdtempSync(join(tmpdir(), 'at-fh-'));
     mkdirSync(join(root, 'file-history', 'S'), { recursive: true });
     writeFileSync(join(root, 'file-history', 'S', '0123456789abcdef@v1'), 'old text');
-    expect(readVersion(root, 'S', '0123456789abcdef@v1')).toBe('old text');
-    expect(readVersion(root, 'S', '../../settings.json')).toBeUndefined();
-    expect(readVersion(root, 'S', '0123456789abcdef@v9')).toBeUndefined();
+    const fh = join(root, 'file-history', 'S');
+    expect(readVersion(fh, '0123456789abcdef@v1')).toBe('old text');
+    expect(readVersion(fh, '../../settings.json')).toBeUndefined();
+    expect(readVersion(fh, '0123456789abcdef@v9')).toBeUndefined();
   });
   it('reads the live file only when the session tracked it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'at-cur-'));

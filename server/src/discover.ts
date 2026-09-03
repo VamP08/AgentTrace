@@ -1,43 +1,52 @@
-// Find sessions and their subagents under <claudeRoot>/projects without parsing whole files.
+// Find sessions and their subagents without parsing whole files. Sessions come from two places:
+// the coding tool's own projects folder, and AgentTrace's archive of sessions it has indexed.
+// The live copy wins while it exists; the archive answers once the tool has cleaned up.
 // Title, cwd and start time come from the first and last 64KB of each transcript.
 import { readdirSync, statSync, openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import type { AgentInfo, Session } from '@agenttrace/shared';
+import { archiveRoot, livePaths } from './archive.js';
 
 const LIVE_WINDOW_MS = 30_000;
 const PEEK_BYTES = 64 * 1024;
 
 export function discoverSessions(claudeRoot: string): Session[] {
-  const projectsDir = join(claudeRoot, 'projects');
-  if (!existsSync(projectsDir)) return [];
-  const out: Session[] = [];
-  for (const slug of readdirSync(projectsDir)) {
-    const dir = join(projectsDir, slug);
-    let entries: string[];
-    try {
-      if (!statSync(dir).isDirectory()) continue;
-      entries = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      if (!name.endsWith('.jsonl')) continue;
-      const file = join(dir, name);
+  const byId = new Map<string, Session>();
+  const scan = (root: string, archived: boolean) => {
+    const projectsDir = join(root, 'projects');
+    if (!existsSync(projectsDir)) return;
+    for (const slug of readdirSync(projectsDir)) {
+      const dir = join(projectsDir, slug);
+      let entries: string[];
       try {
-        out.push(describeSession(file, slug));
+        if (!statSync(dir).isDirectory()) continue;
+        entries = readdirSync(dir);
       } catch {
-        // unreadable file: skip rather than fail the whole list
+        continue;
+      }
+      for (const name of entries) {
+        if (!name.endsWith('.jsonl')) continue;
+        const id = basename(name, '.jsonl');
+        if (archived && byId.has(id)) continue; // the live copy is already listed
+        try {
+          byId.set(id, describeSession(slug, archived, livePaths(root, slug, id)));
+        } catch {
+          // unreadable file: skip rather than fail the whole list
+        }
       }
     }
-  }
-  return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  };
+  scan(claudeRoot, false);
+  scan(archiveRoot(claudeRoot), true);
+  return [...byId.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
 
-export function sessionFile(claudeRoot: string, projectSlug: string, id: string): string {
-  return join(claudeRoot, 'projects', projectSlug, `${id}.jsonl`);
+export function findSession(claudeRoot: string, id: string): Session | undefined {
+  return discoverSessions(claudeRoot).find((s) => s.id === id);
 }
 
-function describeSession(file: string, projectSlug: string): Session {
+function describeSession(projectSlug: string, archived: boolean, paths: { file: string; dir: string; fileHistory: string }): Session {
+  const { file } = paths;
   const st = statSync(file);
   const head = peek(file, 0, Math.min(PEEK_BYTES, st.size));
   const tail = st.size > PEEK_BYTES ? peek(file, st.size - PEEK_BYTES, PEEK_BYTES) : head;
@@ -50,7 +59,9 @@ function describeSession(file: string, projectSlug: string): Session {
     startedAt: firstMatch(head, /"timestamp":"([^"]+)"/) ?? st.birthtime.toISOString(),
     updatedAt: st.mtime.toISOString(),
     bytes: st.size,
-    live: Date.now() - st.mtimeMs < LIVE_WINDOW_MS,
+    live: !archived && Date.now() - st.mtimeMs < LIVE_WINDOW_MS,
+    archived,
+    ...paths,
   };
 }
 
@@ -80,8 +91,8 @@ function firstUserText(head: string): string | undefined {
   return undefined;
 }
 
-export function discoverAgents(claudeRoot: string, projectSlug: string, id: string): AgentInfo[] {
-  const sessionDir = join(claudeRoot, 'projects', projectSlug, id);
+/** Subagent transcripts under a session's folder, joined to their meta files. */
+export function discoverAgents(sessionDir: string): AgentInfo[] {
   const out: AgentInfo[] = [];
   const scan = (dir: string, rel: string) => {
     if (!existsSync(dir)) return;
