@@ -145,8 +145,41 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .empty.small { padding: 12px 16px; font-size: 12px; }
 .notice { margin: 12px 24px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); color: var(--text-2); font-size: 12px; }
 
+/* ---------- now panel ---------- */
+.now { margin: 16px 24px 8px; padding: 16px 18px 14px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel); box-shadow: var(--shadow); }
+.now.idle { box-shadow: none; border-color: var(--line); }
+.now-h { display: flex; align-items: center; gap: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 10px; }
+.now-ask, .now-say, .now-do { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px 12px; align-items: baseline; margin-bottom: 10px; }
+.now .who { font-size: 12px; font-weight: 500; color: var(--text-3); }
+.now-ask p { margin: 0; font-size: 14px; font-weight: 500; white-space: pre-wrap; max-width: 72ch; }
+.now-say p { margin: 0; color: var(--text-2); white-space: pre-wrap; max-width: 72ch; }
+.now-do .name { font-weight: 500; color: var(--text); }
+.now-do .arg { color: var(--text-2); }
+.now-do .explain-line { color: var(--text-2); margin-top: 2px; }
+.now-grid { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.stat { display: flex; align-items: baseline; gap: 6px; }
+.stat b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--text-3); font-size: 12px; }
+.stat.fail b { color: var(--fail); }
+.now-p { margin: 8px 0 0; color: var(--text-3); font-size: 12px; }
+
+/* ---------- chapters ---------- */
+.chapter { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 6px 24px 6px 16px; text-align: left; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 1; }
+.chapter:hover { background: var(--hover); }
+.chapter.open { background: var(--panel); }
+.chapter .chev { flex: none; transform: rotate(-45deg); top: 0; }
+.chapter.open .chev { transform: rotate(45deg); top: -2px; }
+.chapter .n { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); width: 22px; flex: none; }
+.chapter .p { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.chapter .c { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chapter .c.fail { color: var(--fail); }
+.chapter .c.state { font-weight: 500; color: var(--text-2); }
+.chapter .c.state.live { color: var(--live); }
+.chapter .c.state.ok { color: var(--ok); }
+.chapter .c.time { font-family: var(--font-mono); }
+
 /* ---------- timeline ---------- */
-.row { display: grid; grid-template-columns: 76px 64px minmax(0, 1fr); padding: 0 24px 0 16px; border-bottom: 1px solid var(--line); }
+.row { display: grid; grid-template-columns: 76px 64px minmax(0, 1fr); padding: 0 24px 0 48px; border-bottom: 1px solid var(--line); }
 .row > .time { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); padding-top: 9px; }
 .row > .who { font-size: 12px; font-weight: 600; color: var(--text-3); padding-top: 8px; letter-spacing: 0.02em; }
 .row.user { background: var(--panel); }

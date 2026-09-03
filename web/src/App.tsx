@@ -6,13 +6,8 @@ import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
 import { StackStrip } from './components/StackStrip';
 
-const VIEWS = [
-  { id: 'Timeline', ready: true },
-  { id: 'Files', ready: true },
-  { id: 'Agents', ready: false },
-  { id: 'Context', ready: false },
-  { id: 'Learn', ready: false },
-] as const;
+// Only views that exist. Others arrive when they are built, not before.
+const VIEWS = [{ id: 'Turns' }, { id: 'Files' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -27,7 +22,7 @@ function readTheme(): 'dark' | 'light' {
 
 export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
-  const [view, setView] = useState<ViewId>('Timeline');
+  const [view, setView] = useState<ViewId>('Turns');
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
@@ -142,7 +137,7 @@ export function App() {
         {!current ? (
           <div className="empty">
             <h3>Choose a session.</h3>
-            A live session streams as it happens; a past one replays from its first line. Every tool call carries a plain-language line the first time that tool appears, and a question mark to bring it back later.
+            A live session shows what is happening now, then its turns. A past one shows what it amounted to, then its turns from the first. Every tool call is explained the first time it appears; the question mark brings the explanation back.
           </div>
         ) : (
           <>
@@ -163,9 +158,8 @@ export function App() {
               <div className="row2">
                 <div className="seg" role="tablist">
                   {VIEWS.map((v) => (
-                    <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)} disabled={!v.ready}>
+                    <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
                       {v.id}
-                      {!v.ready && <small>soon</small>}
                     </button>
                   ))}
                 </div>
@@ -174,7 +168,7 @@ export function App() {
             </header>
             <div className="stage">
               <StackStrip events={s.events} />
-              {view === 'Timeline' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
+              {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
             </div>
           </>
