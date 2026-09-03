@@ -1,23 +1,51 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { Session } from '@agenttrace/shared';
 import { fetchSessions, openSocket } from './api';
 import { initial, reduce } from './store';
 import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
 import { StackStrip } from './components/StackStrip';
 
-const READY: Record<string, boolean> = { Timeline: true, Diffs: true };
+const VIEWS = [
+  { id: 'Timeline', ready: true },
+  { id: 'Files', ready: true },
+  { id: 'Agents', ready: false },
+  { id: 'Context', ready: false },
+  { id: 'Learn', ready: false },
+] as const;
+type ViewId = (typeof VIEWS)[number]['id'];
 
-const TABS = ['Timeline', 'Diffs', 'Agents', 'Context', 'Learn'] as const;
+function readTheme(): 'dark' | 'light' {
+  try {
+    const t = localStorage.getItem('agenttrace-theme');
+    if (t === 'light' || t === 'dark') return t;
+  } catch {
+    // storage unavailable: dark by default
+  }
+  return 'dark';
+}
 
 export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
-  const [tab, setTab] = useState<(typeof TABS)[number]>('Timeline');
+  const [view, setView] = useState<ViewId>('Timeline');
+  const [query, setQuery] = useState('');
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
   const socket = useRef<ReturnType<typeof openSocket>>();
-  const [tapeKey, setTapeKey] = useState(0);
 
   useEffect(() => {
-    fetchSessions().then((sessions) => dispatch({ type: 'sessions', sessions })).catch(() => dispatch({ type: 'sessions', sessions: [] }));
-    const t = setInterval(() => fetchSessions().then((sessions) => dispatch({ type: 'sessions', sessions })).catch(() => {}), 15000);
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem('agenttrace-theme', theme);
+    } catch {
+      // fine
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const load = () => fetchSessions().then((sessions) => dispatch({ type: 'sessions', sessions })).catch(() => {});
+    load();
+    const t = setInterval(load, 15000);
     socket.current = openSocket(
       (msg) => dispatch({ type: 'server', msg }),
       (open) => dispatch({ type: 'socket', open }),
@@ -28,81 +56,156 @@ export function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (s.batches) setTapeKey((k) => k + 1);
-  }, [s.batches]);
-
   const select = (id: string) => {
     dispatch({ type: 'select', id });
     socket.current?.subscribe(id);
   };
 
   const current = s.sessions.find((x) => x.id === s.selected);
-  const totals = useMemo(() => {
-    let output = 0, cacheRead = 0, cacheWrite = 0, calls = 0;
-    for (const e of s.events) {
-      if (e.kind === 'usage') { output += e.output; cacheRead += e.cacheRead; cacheWrite += e.cacheWrite; }
-      if (e.kind === 'tool_call') calls++;
+
+  const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q ? s.sessions.filter((x) => x.title.toLowerCase().includes(q) || project(x).toLowerCase().includes(q)) : s.sessions;
+    const live = list.filter((x) => x.live);
+    const byProject = new Map<string, Session[]>();
+    for (const x of list) {
+      if (x.live) continue;
+      const p = project(x);
+      byProject.set(p, [...(byProject.get(p) ?? []), x]);
     }
-    return { output, cacheRead, cacheWrite, calls };
+    const out: { name: string; items: Session[] }[] = [];
+    if (live.length) out.push({ name: 'Live now', items: live });
+    for (const [name, items] of [...byProject.entries()].sort((a, b) => (a[1][0].updatedAt < b[1][0].updatedAt ? 1 : -1))) out.push({ name, items });
+    return out;
+  }, [s.sessions, query]);
+
+  const totals = useMemo(() => {
+    let output = 0, cacheRead = 0, calls = 0, failed = 0;
+    const results = new Set<string>();
+    for (const e of s.events) {
+      if (e.kind === 'usage') { output += e.output; cacheRead += e.cacheRead; }
+      if (e.kind === 'tool_call') calls++;
+      if (e.kind === 'tool_result') { results.add(e.toolUseId); if (e.isError) failed++; }
+    }
+    return { output, cacheRead, calls, failed };
   }, [s.events]);
 
   return (
     <div className="app">
-      <div key={tapeKey} className={`tape ${tapeKey ? 'advance' : ''}`} aria-hidden />
-      <header className="top">
+      <aside className="side" aria-label="Sessions">
         <div className="brand">
-          AgentTrace<small>what the session did, step by step</small>
+          <span className="mark" aria-hidden />
+          <h1>AgentTrace</h1>
+          <span className="sub">{s.sessions.length} sessions</span>
         </div>
-        <div className="status">
-          <span><i className={`dot ${s.connected ? 'on' : ''}`} />{s.connected ? 'server connected' : 'server offline'}</span>
-          {current && <span><i className={`dot ${current.live ? 'live' : ''}`} />{current.live ? 'session live' : 'session idle'}</span>}
-          {current && <span>{totals.calls} tool calls</span>}
-          {current && <span>{fmt(totals.output)} out · {fmt(totals.cacheRead)} cached · {fmt(totals.cacheWrite)} written</span>}
+        <div className="search">
+          <input
+            type="search"
+            placeholder="Filter by title or project"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Filter sessions"
+          />
         </div>
-      </header>
-      <div className="body">
-        <nav className="rail" aria-label="Sessions">
-          <h2>Sessions</h2>
-          {s.sessions.length === 0 && <div className="empty">No transcripts found under the projects folder yet.</div>}
-          {s.sessions.map((x) => (
-            <button key={x.id} className={`sess ${x.id === s.selected ? 'sel' : ''}`} onClick={() => select(x.id)}>
-              <span className="t">{x.live && <i className="dot live" />}{x.title}</span>
-              <span className="m">{x.updatedAt.slice(0, 16).replace('T', ' ')} · {mb(x.bytes)} <span className="p">· {x.projectSlug.replace(/^.*-code-/, '')}</span></span>
-            </button>
-          ))}
-        </nav>
-        <main className="main">
-          <div className="tabs">
-            {TABS.map((t) => (
-              <button key={t} className={`tab ${t === tab ? 'sel' : ''}`} onClick={() => setTab(t)} disabled={!READY[t]} title={!READY[t] ? 'Coming in a later milestone' : undefined}>
-                {t}
-              </button>
-            ))}
-            <div id="tab-tools" className="tools" />
-          </div>
-          {!current ? (
-            <div className="empty">
-              <h3>Pick a session on the left.</h3>
-              A live session streams as it happens. A past one replays from its first line. Every tool call
-              opens on a plain-language line before its raw input.
-            </div>
-          ) : (
-            <div className="stage">
-              <StackStrip events={s.events} />
-              {tab === 'Timeline' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} />}
-              {tab === 'Diffs' && <Diffs sessionId={current.id} events={s.events} />}
+        <nav className="list">
+          {s.sessions.length === 0 && (
+            <div className="empty small">
+              No transcripts found. The server reads <code>~/.claude/projects</code>; set <code>CLAUDE_CONFIG_DIR</code> if yours lives elsewhere.
             </div>
           )}
-        </main>
-      </div>
+          {groups.map((g) => (
+            <div className="group" key={g.name}>
+              <button className="ghead" onClick={() => setClosed({ ...closed, [g.name]: !closed[g.name] })} aria-expanded={!closed[g.name]}>
+                <span className={`chev ${closed[g.name] ? 'closed' : ''}`} aria-hidden />
+                {g.name}
+                <span className="n">{g.items.length}</span>
+              </button>
+              {!closed[g.name] &&
+                g.items.map((x) => (
+                  <button key={x.id} className={`sess ${x.id === s.selected ? 'sel' : ''}`} onClick={() => select(x.id)} aria-current={x.id === s.selected ? 'true' : undefined}>
+                    <span className="t">{x.title}</span>
+                    <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
+                  </button>
+                ))}
+            </div>
+          ))}
+        </nav>
+        <div className="foot">
+          <span><i className="dot" style={{ color: s.connected ? 'var(--ok)' : 'var(--fail)' }} />{s.connected ? 'Server connected' : 'Server offline'}</span>
+          <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
+            {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+          </button>
+        </div>
+      </aside>
+
+      <main className="main">
+        {!current ? (
+          <div className="empty">
+            <h3>Choose a session.</h3>
+            A live session streams as it happens; a past one replays from its first line. Every tool call carries a plain-language line the first time that tool appears, and a question mark to bring it back later.
+          </div>
+        ) : (
+          <>
+            <header className="head">
+              <div className="row1">
+                <h2 title={current.title}>{current.title}</h2>
+                <span className={`pill ${current.live ? 'live' : ''}`}>{current.live ? 'Live' : 'Idle'}</span>
+                {totals.failed > 0 && <span className="pill fail">{totals.failed} failed</span>}
+              </div>
+              <div className="meta">
+                <span>Folder <b>{project(current)}</b></span>
+                <span>Started <b>{when(current.startedAt)}</b></span>
+                <span>Tool calls <b>{totals.calls}</b></span>
+                <span>Tokens out <b>{fmt(totals.output)}</b></span>
+                <span>Cache read <b>{fmt(totals.cacheRead)}</b></span>
+                <span>Transcript <b>{mb(current.bytes)}</b></span>
+              </div>
+              <div className="row2">
+                <div className="seg" role="tablist">
+                  {VIEWS.map((v) => (
+                    <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)} disabled={!v.ready}>
+                      {v.id}
+                      {!v.ready && <small>soon</small>}
+                    </button>
+                  ))}
+                </div>
+                <div id="view-tools" className="tools" />
+              </div>
+            </header>
+            <div className="stage">
+              <StackStrip events={s.events} />
+              {view === 'Timeline' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
+              {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
 
+function project(x: Session): string {
+  const tail = x.cwd.split(/[\\/]/).filter(Boolean).pop();
+  return tail || x.projectSlug;
+}
 function fmt(n: number): string {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 }
 function mb(b: number): string {
   return b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`;
+}
+function when(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+function ago(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return '';
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
 }

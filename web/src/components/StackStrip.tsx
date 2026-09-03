@@ -7,7 +7,7 @@ export function StackStrip({ events }: { events: Event[] }) {
   if (hits.length === 0) return null;
   return (
     <div className="stack" aria-label="Technologies detected">
-      <span className="lab">stack so far</span>
+      <span className="lab">Stack so far</span>
       {hits.map((h) => (
         <span key={h.tech} className={`badge ${STACK[h.tech]?.category ?? ''}`} title={`${STACK[h.tech]?.what ?? ''}\n\nseen in: ${h.evidence}`}>
           {h.tech}

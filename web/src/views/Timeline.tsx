@@ -6,12 +6,7 @@ import { ToolCard } from '../components/ToolCard';
 
 type Row =
   | { key: string; kind: 'user' | 'assistant' | 'context' | 'raw'; ev: Event }
-  | { key: string; kind: 'tool'; ev: Extract<Event, { kind: 'tool_call' }>; result?: ToolResultEvent; agent?: AgentInfo };
-
-const FILTERS = [
-  { id: 'context', label: 'context' },
-  { id: 'raw', label: 'raw records' },
-] as const;
+  | { key: string; kind: 'tool'; ev: Extract<Event, { kind: 'tool_call' }>; result?: ToolResultEvent; agent?: AgentInfo; first: boolean };
 
 interface Props {
   events: Event[];
@@ -19,9 +14,10 @@ interface Props {
   loading: boolean;
   parseErrors: number;
   batches: number;
+  live: boolean;
 }
 
-export function Timeline({ events, agents, loading, parseErrors, batches }: Props) {
+export function Timeline({ events, agents, loading, parseErrors, batches, live }: Props) {
   const [show, setShow] = useState<Record<string, boolean>>({ context: false, raw: false });
   const [follow, setFollow] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -30,15 +26,21 @@ export function Timeline({ events, agents, loading, parseErrors, batches }: Prop
     const results = new Map<string, ToolResultEvent>();
     for (const e of events) if (e.kind === 'tool_result') results.set(e.toolUseId, e);
     const agentByTool = new Map(agents.map((a) => [a.toolUseId, a]));
+    const seen = new Set<string>();
     const out: Row[] = [];
     for (const e of events) {
       switch (e.kind) {
         case 'user': out.push({ key: e.id, kind: 'user', ev: e }); break;
         case 'assistant_text': out.push({ key: e.id, kind: 'assistant', ev: e }); break;
-        case 'tool_call': out.push({ key: e.id, kind: 'tool', ev: e, result: results.get(e.toolUseId), agent: agentByTool.get(e.toolUseId) }); break;
+        case 'tool_call': {
+          const first = !seen.has(e.name);
+          seen.add(e.name);
+          out.push({ key: e.id, kind: 'tool', ev: e, result: results.get(e.toolUseId), agent: agentByTool.get(e.toolUseId), first });
+          break;
+        }
         case 'context': if (show.context) out.push({ key: e.id, kind: 'context', ev: e }); break;
         case 'raw': if (show.raw) out.push({ key: e.id, kind: 'raw', ev: e }); break;
-        default: break; // usage, snapshot, tool_result, agent_spawn are folded into other rows or headers
+        default: break;
       }
     }
     return out;
@@ -47,58 +49,50 @@ export function Timeline({ events, agents, loading, parseErrors, batches }: Prop
   const virt = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 56,
-    overscan: 12,
+    estimateSize: () => 40,
+    overscan: 14,
     getItemKey: (i) => rows[i].key,
-    // Measured rows notify during React's commit; a synchronous flush there trips React 18.
     useFlushSync: false,
   });
 
   useEffect(() => {
-    if (!follow || !rows.length) return;
-    // Scroll on the next frame: calling into the virtualizer during React's commit makes it
-    // flush synchronously and React warns about it.
+    if (!follow || !live || !rows.length) return;
     const id = requestAnimationFrame(() => virt.scrollToIndex(rows.length - 1, { align: 'end' }));
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batches, rows.length, follow]);
+  }, [batches, rows.length, follow, live]);
 
-  const toolsSlot = document.getElementById('tab-tools');
+  const slot = document.getElementById('view-tools');
 
   return (
     <>
-      {toolsSlot &&
+      {slot &&
         createPortal(
           <>
-            {FILTERS.map((f) => (
-              <button key={f.id} className={`chip ${show[f.id] ? 'on' : ''}`} onClick={() => setShow({ ...show, [f.id]: !show[f.id] })}>
-                {f.label}
-              </button>
-            ))}
-            {parseErrors > 0 && <span className="chip">{parseErrors} unreadable lines</span>}
-            <button className={`chip follow ${follow ? 'on' : ''}`} onClick={() => setFollow(!follow)} aria-pressed={follow}>
-              {follow ? 'following' : 'follow'}
+            <button className={`btn sm ${show.context ? 'on' : ''}`} onClick={() => setShow({ ...show, context: !show.context })} aria-pressed={show.context}>
+              Context
             </button>
+            <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>
+              Raw records
+            </button>
+            {parseErrors > 0 && <span className="pill fail">{parseErrors} unreadable lines</span>}
+            {live && (
+              <button className={`btn sm ${follow ? 'on' : ''}`} onClick={() => setFollow(!follow)} aria-pressed={follow}>
+                {follow ? 'Following' : 'Follow'}
+              </button>
+            )}
           </>,
-          toolsSlot,
+          slot,
         )}
       <div className="scroll" ref={scrollRef} onWheel={() => follow && setFollow(false)}>
         {loading && <div className="empty">Reading the transcript…</div>}
         {!loading && rows.length === 0 && <div className="empty">Nothing to show yet.</div>}
         <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
-          {virt.getVirtualItems().map((v) => {
-            const r = rows[v.index];
-            return (
-              <div
-                key={v.key}
-                data-index={v.index}
-                ref={virt.measureElement}
-                style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}
-              >
-                <RowView row={r} />
-              </div>
-            );
-          })}
+          {virt.getVirtualItems().map((v) => (
+            <div key={v.key} data-index={v.index} ref={virt.measureElement} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}>
+              <RowView row={rows[v.index]} />
+            </div>
+          ))}
         </div>
       </div>
     </>
@@ -107,15 +101,16 @@ export function Timeline({ events, agents, loading, parseErrors, batches }: Prop
 
 function RowView({ row }: { row: Row }) {
   const time = clock(row.ev.ts);
+  const ev = row.ev as any;
   switch (row.kind) {
     case 'user':
       return (
         <div className="row user">
           <div className="time">{time}</div>
-          <div className="stamp">YOU</div>
+          <div className="who">You</div>
           <div className="text">
-            {(row.ev as any).text}
-            {(row.ev as any).images > 0 && <span className="src"> [{(row.ev as any).images} image(s) not shown]</span>}
+            {ev.text}
+            {ev.images > 0 && <span className="src"> [{ev.images} image{ev.images > 1 ? 's' : ''} not shown]</span>}
           </div>
         </div>
       );
@@ -123,39 +118,32 @@ function RowView({ row }: { row: Row }) {
       return (
         <div className="row assistant">
           <div className="time">{time}</div>
-          <div className="stamp">MODEL</div>
-          <div className="text">{(row.ev as any).text}</div>
+          <div className="who">Model</div>
+          <div className="text">{ev.text}</div>
         </div>
       );
     case 'tool':
       return (
-        <div className={`row tool ${row.result?.isError ? 'error' : ''}`}>
+        <div className="row tool">
           <div className="time">{time}</div>
-          <div className="stamp">TOOL</div>
-          <ToolCard call={row.ev} result={row.result} agent={row.agent} />
+          <div className="who">Tool</div>
+          <ToolCard call={row.ev} result={row.result} agent={row.agent} first={row.first} />
         </div>
       );
     case 'context':
       return (
         <div className="row context">
           <div className="time">{time}</div>
-          <div className="stamp">CTX</div>
-          <div className="text">
-            <span className="src">{(row.ev as any).source}</span>
-            {String((row.ev as any).content).slice(0, 400)}
-          </div>
+          <div className="who">Context</div>
+          <div className="text"><span className="src">{ev.source}</span>{String(ev.content).slice(0, 400)}</div>
         </div>
       );
     case 'raw':
       return (
         <div className="row context">
           <div className="time">{time}</div>
-          <div className="stamp">RAW</div>
-          <div className="text">
-            <span className="src">{(row.ev as any).type}</span>
-            {(row.ev as any).data ? JSON.stringify((row.ev as any).data).slice(0, 300) : ''}
-            {(row.ev as any).error ?? ''}
-          </div>
+          <div className="who">Record</div>
+          <div className="text"><span className="src">{ev.type}</span>{ev.data ? JSON.stringify(ev.data).slice(0, 300) : ''}{ev.error ?? ''}</div>
         </div>
       );
   }

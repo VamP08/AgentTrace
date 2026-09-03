@@ -54,7 +54,7 @@ export function Diffs({ sessionId, events }: Props) {
   return (
     <div className="split">
       <aside className="files">
-        <h2>Files touched · {files.length}</h2>
+        <h3>Files touched · {files.length}</h3>
         {files.length === 0 && <div className="empty small">No file backups recorded for this session yet.</div>}
         {files.map((f) => (
           <div key={f.path} className="file">
