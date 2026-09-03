@@ -23,6 +23,30 @@ interface SessionFacts {
   failed: number;
   startTs: string;
   endTs: string;
+  /** short hashes of commits the transcript shows being made, so a session that edits through the shell still counts */
+  commits: string[];
+}
+
+const GIT_COMMIT = /\bgit\b[^\n|&;]*\bcommit\b/;
+/** git prints "[main 1a2b3c4] subject" for every commit it makes. */
+const COMMIT_LINE = /^\[[^\]\n]* ([0-9a-f]{7,40})\]/m;
+
+/** Every commit the transcript shows being made: the hash git printed, and the folder the command ran in. */
+export function commitsMade(events: Event[], session: Session): { sha: string; cwd: string }[] {
+  const results = new Map<string, string>();
+  for (const e of events) if (e.kind === 'tool_result') results.set(e.toolUseId, e.content);
+  const out: { sha: string; cwd: string }[] = [];
+  for (const e of events) {
+    if (e.kind !== 'tool_call' || e.name !== 'Bash') continue;
+    const command = (e.input as Record<string, unknown> | undefined)?.command;
+    if (typeof command !== 'string' || !GIT_COMMIT.test(command)) continue;
+    const result = results.get(e.toolUseId) ?? '';
+    // A quiet commit prints nothing; when the same command then asks git log for it, the first
+    // line of that log is the commit just made.
+    const m = COMMIT_LINE.exec(result) ?? (/git\s+log/.test(command) ? /^([0-9a-f]{7,40}) /m.exec(result) : null);
+    if (m) out.push({ sha: m[1], cwd: e.cwd ?? session.cwd });
+  }
+  return out;
 }
 
 type IndexFile = Record<string, SessionFacts>;
@@ -162,7 +186,14 @@ export function sessionFacts(events: Event[], session: Session, manifests: { rep
     if (!owner) continue; // edits outside any repository belong to no project
     edits[owner] = (edits[owner] ?? 0) + 1;
   }
-  return { bytes: session.bytes, updatedAt: session.updatedAt, edits, cwdRepo: session.cwd ? repoOf(session.cwd) : null, calls, failed, startTs: startTs || session.startedAt, endTs: endTs || session.updatedAt };
+  // A session that edits through the shell (sed, heredocs) shows no Write or Edit call, but the
+  // commits it makes are in the transcript; each one counts as an edit in the repository it landed in.
+  const commits = commitsMade(events, session);
+  for (const c of commits) {
+    const owner = repoOf(resolve(c.cwd));
+    if (owner) edits[owner] = (edits[owner] ?? 0) + 1;
+  }
+  return { bytes: session.bytes, updatedAt: session.updatedAt, edits, cwdRepo: session.cwd ? repoOf(session.cwd) : null, calls, failed, startTs: startTs || session.startedAt, endTs: endTs || session.updatedAt, commits: commits.map((c) => c.sha) };
 }
 
 function indexPath(claudeRoot: string): string {
@@ -172,7 +203,7 @@ function indexPath(claudeRoot: string): string {
 function loadIndex(claudeRoot: string): { sessions?: IndexFile; manifests?: string } {
   try {
     const raw = JSON.parse(readFileSync(indexPath(claudeRoot), 'utf8'));
-    return raw && raw.version === 3 ? raw : {};
+    return raw && raw.version === 6 ? raw : {};
   } catch {
     return {};
   }
@@ -181,7 +212,7 @@ function loadIndex(claudeRoot: string): { sessions?: IndexFile; manifests?: stri
 function saveIndex(claudeRoot: string, sessions: IndexFile, manifests: string) {
   try {
     mkdirSync(dirname(indexPath(claudeRoot)), { recursive: true });
-    writeFileSync(indexPath(claudeRoot), JSON.stringify({ version: 3, manifests, sessions }));
+    writeFileSync(indexPath(claudeRoot), JSON.stringify({ version: 6, manifests, sessions }));
   } catch {
     // the index is a cache; failing to write it only costs time next run
   }

@@ -417,9 +417,13 @@ than one with eight guessed ones.
    archived session that worked in the repository (date, title, files written, helpers used,
    commits made during it), every technology seen with its first appearance and evidence, every
    commit on the default branch with the session it belongs to, the commit messages that state
-   a reason, and what the record already holds. If the app is not running, say so, continue
-   with git and the working copy only, and note in `gaps.md` that the session history was not
-   available.
+   a reason, and what the record already holds. The documents it lists come from the
+   repository and from the folder the record sits in (its parent, when the record is an
+   `agenttrace` subfolder), so notes kept outside the repository count as evidence too. A
+   line saying that commits before some date have no archived session means the tool removed
+   those transcripts before they were indexed: that month has commits and documents only, and
+   `gaps.md` says so. If the app is not running, say so, continue with git and the working
+   copy only, and note in `gaps.md` that the session history was not available.
 3. **Decide per document from the evidence.** Read the real files before writing each; one
    document per turn.
 

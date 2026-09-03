@@ -1,9 +1,13 @@
 // Deterministic technology detection from what the session wrote. No model: a dependency file,
 // an import line or a config file name is the evidence, and the evidence is kept with the hit.
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Event, StackDetectedEvent } from '@agenttrace/shared';
 import { STACK } from '@agenttrace/shared';
 
 const CONFIG_FILES: [RegExp, string][] = [
+  [/(^|[\\/])pom\.xml$/i, 'maven'],
+  [/\.java$/i, 'java'],
   [/(^|[\\/])vite\.config\.[cm]?[jt]s$/i, 'vite'],
   [/(^|[\\/])tsconfig(\..*)?\.json$/i, 'typescript'],
   [/(^|[\\/])Dockerfile$/i, 'docker'],
@@ -94,4 +98,83 @@ const ALIASES: Record<string, string> = {
 
 function depToTech(dep: string): string {
   return ALIASES[dep] ?? dep;
+}
+
+/** Maven artifacts are named by module; the technology is the family. */
+function pomToTech(artifact: string): string {
+  const a = artifact.toLowerCase();
+  if (a.startsWith('spring-boot')) return 'spring-boot';
+  if (a.startsWith('flyway')) return 'flyway';
+  if (a.startsWith('mysql')) return 'mysql';
+  if (a.startsWith('hibernate')) return 'hibernate';
+  if (a.startsWith('junit')) return 'junit';
+  if (a.startsWith('postgresql')) return 'postgres';
+  return depToTech(a);
+}
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'target', 'dist', 'build', '.venv', 'venv', '__pycache__', 'coverage', '.next']);
+const MAX_FILES = 5000;
+const MAX_BYTES = 200_000;
+
+/**
+ * The technologies a working copy holds now, from its dependency files and file names, for a
+ * record written after the sessions that introduced them are gone. Evidence is the file path.
+ */
+export function stackInTree(root: string, depth = 5): { tech: string; evidence: string }[] {
+  const seen = new Set<string>();
+  const out: { tech: string; evidence: string }[] = [];
+  const hit = (tech: string, evidence: string) => {
+    if (!STACK[tech] || seen.has(tech)) return;
+    seen.add(tech);
+    out.push({ tech, evidence });
+  };
+  let visited = 0;
+  const walk = (dir: string, left: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (++visited > MAX_FILES) return;
+      const full = join(dir, name);
+      let isDir: boolean;
+      try {
+        isDir = statSync(full).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
+        // tool folders (.claude worktrees, .superpowers) hold copies of the project; only .github is worth reading
+        if (left > 0 && !SKIP_DIRS.has(name) && (!name.startsWith('.') || name === '.github')) walk(full, left - 1);
+        continue;
+      }
+      for (const [re, tech] of CONFIG_FILES) if (re.test(name)) hit(tech, full);
+      if (!/^(package\.json|pom\.xml|requirements\.txt|pyproject\.toml)$/i.test(name)) continue;
+      let text: string;
+      try {
+        text = readFileSync(full, 'utf8').slice(0, MAX_BYTES);
+      } catch {
+        continue;
+      }
+      if (/package\.json$/i.test(name)) {
+        try {
+          const pkg = JSON.parse(text);
+          for (const dep of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) hit(depToTech(dep), `"${dep}" in ${full}`);
+        } catch {
+          // not JSON: nothing to read
+        }
+      } else if (/pom\.xml$/i.test(name)) {
+        for (const m of text.matchAll(/<artifactId>([^<]+)<\/artifactId>/g)) hit(pomToTech(m[1]), `${m[1]} in ${full}`);
+      } else {
+        for (const line of text.split('\n')) {
+          const m = /^\s*"?([A-Za-z0-9_.-]+)/.exec(line);
+          if (m) hit(depToTech(m[1].toLowerCase()), `${line.trim()} in ${full}`);
+        }
+      }
+    }
+  };
+  walk(root, depth);
+  return out;
 }
