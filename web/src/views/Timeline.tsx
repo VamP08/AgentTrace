@@ -107,9 +107,11 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
       const open = isOpen(t);
       out.push({ key: `turn:${t.n}`, kind: 'chapter', turn: t, open });
       if (!open) continue;
-      // commits made while this turn was running belong to it; the last turn also owns later ones
+      // commits made while this turn was running belong to it: after its first line and within
+      // half an hour of its last, so days of idle time between turns never sweep in unrelated work
       const next = turns[t.n];
-      const mine = commits.filter((c) => c.ts >= t.startTs && (!next || c.ts < next.startTs)).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+      const cutoff = new Date(new Date(t.endTs).getTime() + 30 * 60_000).toISOString();
+      const mine = commits.filter((c) => c.ts >= t.startTs && c.ts <= cutoff && (!next || c.ts < next.startTs)).sort((a, b) => (a.ts < b.ts ? -1 : 1));
       let ci = 0;
       const flush = (upTo: string) => {
         while (ci < mine.length && (!upTo || mine[ci].ts <= upTo)) { out.push({ key: `commit:${mine[ci].sha}`, kind: 'commit', commit: mine[ci] }); ci++; }
