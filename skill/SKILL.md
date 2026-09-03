@@ -58,51 +58,110 @@ Write the entry in the same turn as the code it describes. Do not batch to the e
 
 ## learning/<slug>.md
 
+A learning entry is a lesson, not a note. It opens on the reader's own code, shows the idea as a
+picture, walks the mechanism in steps, asks the reader to commit to an answer before seeing it,
+and ends with something to try. Aim for the length of a good tutorial page, not a paragraph.
+
 ```markdown
 ---
 title: Tailing a file by byte offset
-summary: Read only the bytes added since last time, so a growing file is never re-read.
+summary: Read only the bytes added since last time, so a growing file is never re-read
 type: pattern
 level: beginner
 tags: [filesystem, streaming, chokidar]
 files: [server/src/tail.ts]
-prerequisites: [what-is-a-file-descriptor]
+anchor: onChange
+prerequisites: [jsonl, line-by-line-file-reading]
 related: [chokidar]
 date: 2026-09-03T10:42:00+05:30
 updated: 2026-09-03T10:42:00+05:30
 session: 2700d89b-d5b8-44bd-bf70-c7673b150d57
+questions:
+  - q: The file is 1,000 bytes and the offset says 1,000. A change event fires and the file is 1,200 bytes. How many bytes are read?
+    a: 200. Only the bytes past the offset. The offset then becomes 1,200.
+  - q: The file shrinks to 300 bytes. What must the tailer do, and why?
+    a: Reset the offset to zero and drop any partial line. A smaller file means it was replaced, so nothing already read can be trusted to still be there.
+exercise:
+  task: In a scratch folder, write a 20-line script that prints new lines of a file as they are appended, using only fs.statSync and fs.readSync.
+  hint: Keep two variables between polls, the byte offset and the partial line without a newline yet.
+  solution: |
+    let offset = 0, partial = '';
+    setInterval(() => {
+      const size = fs.statSync(file).size;
+      if (size < offset) { offset = 0; partial = ''; }
+      if (size === offset) return;
+      const buf = Buffer.alloc(size - offset);
+      const fd = fs.openSync(file, 'r'); fs.readSync(fd, buf, 0, buf.length, offset); fs.closeSync(fd);
+      offset = size;
+      const lines = (partial + buf.toString()).split('
+');
+      partial = lines.pop() ?? '';
+      lines.forEach((l) => console.log(l));
+    }, 200);
 ---
-**What it is.** Two or three sentences a non-programmer can follow.
+## What it is
 
-**Why here.** The reason this project needs it, and what simpler thing would have failed.
+Two or three short paragraphs a non-programmer can follow. Say what the thing is, what it
+replaces, and the one sentence that makes it click.
 
-**How it works.** The mechanism in plain steps. For an algorithm, number the steps. For math,
-show the formula, then one worked example with real numbers from this project.
+## Why here
 
-**Where to look.** File names and function names, so the reader can open the code.
+The reason this project needs it, and what simpler thing would have failed. Name the cost.
 
-**Try it.** One small exercise the reader can do by hand or in a REPL to feel the idea.
+## The idea in one picture
 
-**Go deeper.** One or two links, or a book chapter.
+```mermaid
+flowchart LR
+  file[(file on disk)] -->|bytes past the offset| read[read]
+  read --> split[split on newline]
+  split --> keep[keep last partial line]
+  split --> events[parse complete lines]
+```
+
+One sentence under the picture saying what to look at.
+
+## How it works
+
+1. Numbered steps, one action each, in the order the code does them.
+2. For an algorithm, the steps are the algorithm.
+3. For math, the formula, then one worked example with real numbers from this project.
+
+## Where to look
+
+File names and function names, so the reader can open the code. The app shows the lines
+around `anchor` from the first file in `files` automatically; say what to notice in them.
+
+## Go deeper
+
+One or two links, or a book chapter, each with a line on why.
 ```
 
 Fields:
 - `type`: one of `library`, `tool`, `pattern`, `algorithm`, `math`, `architecture`, `design`,
   `security`, `testing`, `term`.
 - `level`: `beginner`, `intermediate`, `advanced`. Judge for a reader who does not program.
-- `summary`: one sentence, shown as a tooltip and on cards. No trailing period needed.
+- `summary`: one sentence, shown on cards. No trailing period needed.
 - `tags`: lowercase words. Reuse tags already present in the folder.
-- `files`: paths relative to the project repo. AgentTrace uses these to attach the entry to the
-  code and to the session turn that wrote it.
+- `files`: paths relative to the project repo. The first one is the lesson's code sample.
+- `anchor`: a function, class, variable or exact phrase in the first file. The app shows the
+  lines around its first occurrence. Omit only when the whole file is short.
 - `prerequisites` and `related`: slugs of other entries. A prerequisite that has no file yet is
   a request to write it.
+- `questions`: two to four. Each `q` is answerable from the lesson; each `a` says why, in one
+  or two sentences. The reader commits to an answer before revealing yours.
+- `exercise`: one `task` the reader can do in ten minutes with what is on this machine, one
+  `hint`, one `solution`. The solution is real, runnable text, not a description.
 - `date`: when first written. `updated`: when last changed. ISO 8601 with offset.
-- `session`: the id of the session that wrote the entry. Read it from the environment with
-  `echo $CLAUDE_CODE_SESSION_ID` in a Bash call; it is set in every session. Add it to
-  decisions and journal entries too. AgentTrace uses it to attach the entry to the exact turn.
+- `session`: the id of the session that wrote the entry. Read it with
+  `echo $CLAUDE_CODE_SESSION_ID` in a Bash call; it is set in every session.
 
-A `term` entry is short: `summary` plus a two-sentence body. Use it for jargon that appears in
-code or output (WebSocket, mutex, JSONL) that has no deeper mechanism worth a full entry.
+Body headings are exactly `## What it is`, `## Why here`, `## The idea in one picture`,
+`## How it works`, `## Where to look`, `## Go deeper`. The app renders them as sections with a
+table of contents. A `mermaid` fence draws a diagram; a code fence with a language name is
+highlighted. Plain bullet and numbered lists, bold, inline code and links render; no HTML.
+
+A `term` entry may stop after `## What it is` and `## Why here`, with one question and no
+exercise. Everything else gets the full shape.
 
 ## decisions/<slug>.md
 

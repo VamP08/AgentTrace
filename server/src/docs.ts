@@ -1,12 +1,12 @@
 // The record: the folder of Markdown files the agenttrace skill writes while a project is built.
 // Found from a session's cwd through agenttrace.json. Frontmatter is parsed; bodies stay Markdown.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
-import type { Decision, JournalEntry, LearningEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
+import type { CodeWindow, Decision, JournalEntry, LearningEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
 
 /** Walk up from cwd looking for agenttrace.json; the record path inside may be relative to it. */
-export function findManifest(cwd: string): { manifest: ProjectManifest; root: string } | undefined {
+export function findManifest(cwd: string): { manifest: ProjectManifest; root: string; repoDir: string } | undefined {
   let dir = resolve(cwd);
   for (let i = 0; i < 6; i++) {
     const file = join(dir, 'agenttrace.json');
@@ -15,7 +15,7 @@ export function findManifest(cwd: string): { manifest: ProjectManifest; root: st
         const manifest = JSON.parse(readFileSync(file, 'utf8')) as ProjectManifest;
         if (typeof manifest.record !== 'string' || typeof manifest.project !== 'string') return undefined;
         const root = isAbsolute(manifest.record) ? manifest.record : resolve(dir, manifest.record);
-        return { manifest, root };
+        return { manifest, root, repoDir: dir };
       } catch {
         return undefined;
       }
@@ -81,7 +81,7 @@ export function findManifestFor(cwd: string, touched: string[] = []): ReturnType
 export function readRecord(cwd: string, touched: string[] = []): ProjectRecord | undefined {
   const found = findManifestFor(cwd, touched);
   if (!found) return undefined;
-  const { manifest, root } = found;
+  const { manifest, root, repoDir } = found;
   const unparsed: ProjectRecord['unparsed'] = [];
   const learning = readFolder<LearningEntry>(root, 'learning', unparsed, (slug, d, body) => ({
     slug,
@@ -91,10 +91,14 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
     level: (d.level ?? 'beginner') as LearningEntry['level'],
     tags: list(d.tags),
     files: list(d.files),
+    anchor: d.anchor ? String(d.anchor) : undefined,
     prerequisites: list(d.prerequisites),
     related: list(d.related),
     date: str(d.date),
     updated: str(d.updated, str(d.date)),
+    session: d.session ? String(d.session) : undefined,
+    questions: Array.isArray(d.questions) ? d.questions.filter((x: any) => x && x.q).map((x: any) => ({ q: String(x.q), a: str(x.a) })) : [],
+    exercise: d.exercise && typeof d.exercise === 'object' && d.exercise.task ? { task: String(d.exercise.task), hint: d.exercise.hint ? String(d.exercise.hint) : undefined, solution: d.exercise.solution ? String(d.exercise.solution) : undefined } : undefined,
     body,
   })).sort((a, b) => (a.date < b.date ? -1 : 1));
   const decisions = readFolder<Decision>(root, 'decisions', unparsed, (slug, d, body) => ({
@@ -123,6 +127,7 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
   return {
     project: manifest.project,
     root,
+    repoDir,
     roadmap: readDoc(root, 'roadmap.md', unparsed),
     stack: readDoc(root, 'stack.md', unparsed),
     architecture: readDoc(root, 'architecture.md', unparsed),
@@ -133,4 +138,24 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
     journal,
     unparsed,
   };
+}
+
+const LANG: Record<string, string> = { ts: 'typescript', tsx: 'typescript', js: 'javascript', mjs: 'javascript', jsx: 'javascript', py: 'python', json: 'json', css: 'css', html: 'xml', md: 'markdown', yml: 'yaml', yaml: 'yaml', sh: 'bash', toml: 'ini' };
+
+/** Lines around an anchor in a project file. The path must stay inside the repo folder. */
+export function codeWindow(repoDir: string, relPath: string, anchor?: string, span = 40): CodeWindow | undefined {
+  const full = resolve(repoDir, relPath);
+  const base = resolve(repoDir);
+  if (!full.startsWith(base + sep) && full !== base) return undefined;
+  if (!existsSync(full)) return undefined;
+  const all = readFileSync(full, 'utf8').split(/\r?\n/);
+  let anchorLine: number | undefined;
+  if (anchor) {
+    const i = all.findIndex((l) => l.includes(anchor));
+    if (i >= 0) anchorLine = i + 1;
+  }
+  const start = anchorLine ? Math.max(1, anchorLine - 6) : 1;
+  const lines = all.slice(start - 1, start - 1 + span);
+  const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
+  return { path: relPath, start, anchorLine, lines, totalLines: all.length, language: LANG[ext] ?? 'plaintext' };
 }

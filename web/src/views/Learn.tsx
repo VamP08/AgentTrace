@@ -1,7 +1,9 @@
-// The record as a learning path: every concept the build introduced, in the order it appeared,
-// with its explanation, the files it lives in, and the decisions and journal beside it.
-import { useEffect, useMemo, useState } from 'react';
-import type { LearningEntry, ProjectRecord } from '@agenttrace/shared';
+// The record as a course. One lesson per concept: the reader's own code first, then the idea
+// as a picture, the mechanism in steps, questions to commit to before revealing, and one
+// exercise with a hint and a solution. Progress is a per-browser "read" mark, nothing more.
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CodeWindow, LearningEntry, ProjectRecord } from '@agenttrace/shared';
+import { Markdown, Code } from '../components/Markdown';
 
 interface Props {
   sessionId: string;
@@ -9,41 +11,73 @@ interface Props {
 }
 
 const TYPES: LearningEntry['type'][] = ['library', 'tool', 'pattern', 'algorithm', 'math', 'architecture', 'design', 'security', 'testing', 'term'];
+const SECTION_ORDER = ['In this project', 'What it is', 'Why here', 'The idea in one picture', 'How it works', 'Where to look', 'Check yourself', 'Try it', 'Go deeper'];
+
+function readKey(project: string) {
+  return `agenttrace-read:${project}`;
+}
+function loadRead(project: string): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(readKey(project)) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
 
 export function Learn({ sessionId, cwd }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
   const [tab, setTab] = useState<'learning' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [read, setRead] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setRecord(undefined);
     fetch(`/api/sessions/${sessionId}/record`)
       .then((r) => (r.ok ? r.json() : null))
-      .then(setRecord)
+      .then((r: ProjectRecord | null) => {
+        setRecord(r);
+        if (r) setRead(loadRead(r.project));
+      })
       .catch(() => setRecord(null));
   }, [sessionId]);
 
-  const entries = useMemo(() => (record?.learning ?? []).filter((l) => type === 'all' || l.type === type), [record, type]);
-  const entry = entries.find((l) => l.slug === pick) ?? record?.learning.find((l) => l.slug === pick);
+  const ordered = useMemo(() => (record ? orderByPrerequisites(record.learning) : []), [record]);
+  const entries = useMemo(() => ordered.filter((l) => type === 'all' || l.type === type), [ordered, type]);
+  const entry = record?.learning.find((l) => l.slug === pick);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const l of record?.learning ?? []) c[l.type] = (c[l.type] ?? 0) + 1;
     return c;
   }, [record]);
 
+  const markRead = (slug: string, on: boolean) => {
+    if (!record) return;
+    const next = new Set(read);
+    if (on) next.add(slug); else next.delete(slug);
+    setRead(next);
+    try { localStorage.setItem(readKey(record.project), JSON.stringify([...next])); } catch { /* per-browser convenience only */ }
+  };
+
+  const goNext = () => {
+    if (!entry) return;
+    const i = ordered.findIndex((l) => l.slug === entry.slug);
+    const next = ordered.slice(i + 1).find((l) => !read.has(l.slug)) ?? ordered[i + 1];
+    if (next) setPick(next.slug);
+  };
+
   if (record === undefined) return <div className="empty" aria-busy="true">Reading the record…</div>;
   if (record === null) {
     return (
       <div className="empty">
         <h3>No record for this project yet.</h3>
-        The Learn view reads a folder of notes the coding tool keeps while it builds. To start one, add an
-        <code> agenttrace.json </code> at the project's root naming the folder, and install the agenttrace skill so
-        each session writes entries as it introduces libraries, patterns and decisions. This session's folder is
-        <code> {cwd}</code>.
+        The Learn view reads a folder of lessons the coding tool keeps while it builds. Open Setup in the sidebar for the
+        two files to add to a project. This session's folder is <code>{cwd}</code>.
       </div>
     );
   }
+
+  const readCount = ordered.filter((l) => read.has(l.slug)).length;
 
   return (
     <div className="split learn">
@@ -51,12 +85,16 @@ export function Learn({ sessionId, cwd }: Props) {
         <div className="learn-tabs">
           {(['learning', 'decisions', 'journal', 'docs'] as const).map((t) => (
             <button key={t} className={`btn sm quiet ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
-              {t === 'learning' ? `Concepts ${record.learning.length}` : t === 'decisions' ? `Decisions ${record.decisions.length}` : t === 'journal' ? `Journal ${record.journal.length}` : 'Documents'}
+              {t === 'learning' ? `Lessons ${record.learning.length}` : t === 'decisions' ? `Decisions ${record.decisions.length}` : t === 'journal' ? `Journal ${record.journal.length}` : 'Documents'}
             </button>
           ))}
         </div>
         {tab === 'learning' && (
           <>
+            <div className="progress" aria-label="Lessons read">
+              <span>{readCount} of {ordered.length} read</span>
+              <i><b style={{ width: `${ordered.length ? (readCount / ordered.length) * 100 : 0}%` }} /></i>
+            </div>
             <div className="learn-filter">
               <button className={`chip ${type === 'all' ? 'on' : ''}`} onClick={() => setType('all')}>all</button>
               {TYPES.filter((t) => counts[t]).map((t) => (
@@ -64,10 +102,10 @@ export function Learn({ sessionId, cwd }: Props) {
               ))}
             </div>
             {entries.map((l, i) => (
-              <button key={l.slug} className={`node entry ${pick === l.slug ? 'sel' : ''}`} onClick={() => setPick(l.slug)}>
-                <span className="n">{i + 1}</span>
+              <button key={l.slug} className={`node entry ${pick === l.slug ? 'sel' : ''} ${read.has(l.slug) ? 'read' : ''}`} onClick={() => setPick(l.slug)}>
+                <span className="n">{read.has(l.slug) ? '✓' : i + 1}</span>
                 <span className="p">{l.title}</span>
-                <span className="c">{l.type} · {l.level}</span>
+                <span className="c">{l.type} · {l.level} · {minutes(l)} min</span>
               </button>
             ))}
           </>
@@ -94,41 +132,22 @@ export function Learn({ sessionId, cwd }: Props) {
             </button>
           ))}
         {record.unparsed.length > 0 && (
-          <div className="notice">
-            {record.unparsed.length} file{record.unparsed.length > 1 ? 's' : ''} could not be parsed: {record.unparsed.map((u) => u.file).join(', ')}
-          </div>
+          <div className="notice">{record.unparsed.length} file{record.unparsed.length > 1 ? 's' : ''} could not be parsed: {record.unparsed.map((u) => u.file).join(', ')}</div>
         )}
       </aside>
+
       <section className="diffpane learnpane">
         {!pick && (
           <div className="empty">
-            <h3>{record.project}: {record.learning.length} concepts recorded.</h3>
-            Pick one on the left. Each entry says what the thing is, why this project uses it, how it works, where to look in the code, and one exercise to try.
+            <h3>{record.project}: {record.learning.length} lessons, in the order they were needed.</h3>
+            Each lesson opens on the lines of your own code where the idea lives, then explains it, then asks you two or three
+            questions and gives you one thing to try. Lessons are ordered so that what a lesson needs comes before it.
+            Start with the first unread one.
+            <div className="doc-files"><button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button></div>
           </div>
         )}
         {entry && pick && !pick.includes(':') && (
-          <article className="doc">
-            <div className="doc-h">
-              <span className="pill">{entry.type}</span>
-              <span className="pill">{entry.level}</span>
-              <span className="c">{entry.date.slice(0, 10)}</span>
-            </div>
-            <h2>{entry.title}</h2>
-            <p className="lead">{entry.summary}</p>
-            <Markdown text={entry.body} />
-            {entry.files.length > 0 && (
-              <div className="doc-files">
-                <span className="c">Where to look</span>
-                {entry.files.map((f) => <code key={f}>{f}</code>)}
-              </div>
-            )}
-            {(entry.prerequisites.length > 0 || entry.related.length > 0) && (
-              <div className="doc-files">
-                {entry.prerequisites.map((p) => <button key={p} className="chip" onClick={() => setPick(p)}>needs: {p}</button>)}
-                {entry.related.map((p) => <button key={p} className="chip" onClick={() => setPick(p)}>see also: {p}</button>)}
-              </div>
-            )}
-          </article>
+          <Lesson key={entry.slug} entry={entry} record={record} sessionId={sessionId} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={setPick} onNext={goNext} />
         )}
         {pick?.startsWith('d:') && (() => {
           const d = record.decisions.find((x) => `d:${x.slug}` === pick);
@@ -147,6 +166,7 @@ export function Learn({ sessionId, cwd }: Props) {
               <div className="doc-h"><span className="pill">{j.date}</span>{j.milestone && <span className="pill">{j.milestone}</span>}{j.commits.length > 0 && <span className="c">commits {j.commits.join(', ')}</span>}</div>
               <h2>{j.summary}</h2>
               <Markdown text={j.body} />
+              {j.learning.length > 0 && <div className="doc-files"><span className="c">Lessons from this session</span>{j.learning.map((n) => <button key={n} className="chip" onClick={() => { setTab('learning'); setPick(n); }}>{n}</button>)}</div>}
               {j.next.length > 0 && <div className="doc-files"><span className="c">Next</span>{j.next.map((n) => <span key={n} className="chip">{n}</span>)}</div>}
             </article>
           ) : null;
@@ -157,7 +177,7 @@ export function Learn({ sessionId, cwd }: Props) {
           return d ? (
             <article className="doc">
               <h2>{k}.md</h2>
-              <pre className="fm">{JSON.stringify(d.data, null, 2)}</pre>
+              <Code code={JSON.stringify(d.data, null, 2)} language="json" />
               <Markdown text={d.body} />
             </article>
           ) : null;
@@ -167,31 +187,151 @@ export function Learn({ sessionId, cwd }: Props) {
   );
 }
 
-/** The record's bodies use a small, fixed subset of Markdown: bold, code, paragraphs, lists, fences. Rendered without HTML passthrough. */
-function Markdown({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/);
+function Lesson({ entry, record, sessionId, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; sessionId: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
+  const [code, setCode] = useState<CodeWindow | null | undefined>();
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const [hint, setHint] = useState(false);
+  const [solution, setSolution] = useState(false);
+  const top = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setRevealed({}); setHint(false); setSolution(false);
+    top.current?.scrollIntoView({ block: 'start' });
+    const file = entry.files[0];
+    if (!file) return void setCode(null);
+    const q = new URLSearchParams({ file, ...(entry.anchor ? { anchor: entry.anchor } : {}) });
+    fetch(`/api/sessions/${sessionId}/record?${q}`).then((r) => (r.ok ? r.json() : null)).then(setCode).catch(() => setCode(null));
+  }, [entry, sessionId]);
+
+  const sections = useMemo(() => splitSections(entry.body), [entry.body]);
+  const missing = (entry.prerequisites ?? []).filter((p) => !record.learning.some((l) => l.slug === p));
+  const toc = SECTION_ORDER.filter((s) => (s === 'In this project' ? !!entry.files[0] : s === 'Check yourself' ? entry.questions.length > 0 : s === 'Try it' ? !!entry.exercise : sections.some((x) => x.title === s)));
+
   return (
-    <>
-      {blocks.map((b, i) => {
-        if (b.startsWith('```')) {
-          const body = b.replace(/^```[^\n]*\n?/, '').replace(/\n?```$/, '');
-          return <pre key={i} className="code">{body}</pre>;
-        }
-        if (/^(\d+\.|-)\s/.test(b)) {
-          const items = b.split('\n').map((l) => l.replace(/^(\d+\.|-)\s/, ''));
-          return b.startsWith('-') ? <ul key={i}>{items.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ul> : <ol key={i}>{items.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ol>;
-        }
-        return <p key={i}><Inline text={b} /></p>;
-      })}
-    </>
+    <article className="doc lesson" ref={top}>
+      <div className="doc-h">
+        <span className="pill">{entry.type}</span>
+        <span className="pill">{entry.level}</span>
+        <span className="c">{minutes(entry)} min read · introduced {entry.date.slice(0, 10)}</span>
+      </div>
+      <h2>{entry.title}</h2>
+      <p className="lead">{entry.summary}</p>
+
+      {(entry.prerequisites.length > 0 || entry.related.length > 0) && (
+        <div className="doc-files path">
+          {entry.prerequisites.map((p) => (
+            <button key={p} className="chip" disabled={missing.includes(p)} onClick={() => onPick(p)} title={missing.includes(p) ? 'Not written yet' : 'Read this first'}>read first: {titleOf(record, p)}</button>
+          ))}
+          {entry.related.map((p) => (
+            <button key={p} className="chip" disabled={!record.learning.some((l) => l.slug === p)} onClick={() => onPick(p)}>see also: {titleOf(record, p)}</button>
+          ))}
+        </div>
+      )}
+
+      <div className="lesson-grid">
+        <div className="lesson-body">
+          {entry.files[0] && (
+            <section id="sec-in-this-project">
+              <h3>In this project</h3>
+              {code === undefined && <p className="c" aria-busy="true">Reading {entry.files[0]}…</p>}
+              {code === null && <p className="c">The file <code>{entry.files[0]}</code> is not in the project folder right now.</p>}
+              {code && (
+                <>
+                  <div className="codehead"><code>{code.path}</code><span className="c">lines {code.start} to {code.start + code.lines.length - 1} of {code.totalLines}{code.anchorLine ? `, ${entry.anchor} on line ${code.anchorLine}` : ''}</span></div>
+                  <Code code={code.lines.join('\n')} language={code.language} start={code.start} highlight={code.anchorLine} />
+                </>
+              )}
+            </section>
+          )}
+          {sections.map((s) => (
+            <section key={s.title} id={`sec-${slugify(s.title)}`}>
+              <h3>{s.title}</h3>
+              <Markdown text={s.body} />
+            </section>
+          ))}
+          {entry.questions.length > 0 && (
+            <section id="sec-check-yourself">
+              <h3>Check yourself</h3>
+              <p className="c">Decide on your answer before you reveal one.</p>
+              {entry.questions.map((q, i) => (
+                <div key={i} className="quiz">
+                  <p className="q">{q.q}</p>
+                  {!revealed[i] && <button className="btn sm" onClick={() => setRevealed({ ...revealed, [i]: true })}>Reveal the answer</button>}
+                  {revealed[i] && <p className="a">{q.a}</p>}
+                </div>
+              ))}
+            </section>
+          )}
+          {entry.exercise && (
+            <section id="sec-try-it">
+              <h3>Try it</h3>
+              <Markdown text={entry.exercise.task} />
+              <div className="doc-files">
+                {entry.exercise.hint && !hint && <button className="btn sm" onClick={() => setHint(true)}>Show a hint</button>}
+                {entry.exercise.solution && !solution && <button className="btn sm" onClick={() => setSolution(true)}>Show the solution</button>}
+              </div>
+              {hint && entry.exercise.hint && <p className="a">{entry.exercise.hint}</p>}
+              {solution && entry.exercise.solution && <Code code={entry.exercise.solution.trim()} language={code?.language ?? 'javascript'} />}
+            </section>
+          )}
+          <div className="lesson-end">
+            <label className="check"><input type="checkbox" checked={isRead} onChange={(e) => onRead(e.target.checked)} /> Mark as read</label>
+            <button className="btn primary" onClick={() => { onRead(true); onNext(); }}>Next lesson</button>
+          </div>
+        </div>
+        <nav className="toc" aria-label="On this page">
+          <span className="c">On this page</span>
+          {toc.map((t) => <a key={t} href={`#sec-${slugify(t)}`}>{t}</a>)}
+        </nav>
+      </div>
+    </article>
   );
 }
 
-function Inline({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((p, i) => (p.startsWith('**') ? <b key={i}>{p.slice(2, -2)}</b> : p.startsWith('`') ? <code key={i}>{p.slice(1, -1)}</code> : <span key={i}>{p}</span>))}
-    </>
-  );
+/** Body sections by `## ` heading; a body in the older bold-label form becomes one section per label. */
+function splitSections(body: string): { title: string; body: string }[] {
+  const out: { title: string; body: string }[] = [];
+  const parts = body.split(/^## +/m);
+  if (parts.length > 1) {
+    for (const p of parts.slice(1)) {
+      const nl = p.indexOf('\n');
+      out.push({ title: p.slice(0, nl).trim(), body: p.slice(nl + 1).trim() });
+    }
+    return out;
+  }
+  for (const block of body.split(/\n{2,}/)) {
+    const m = /^\*\*([^*]+)\.\*\*\s*/.exec(block);
+    if (m) out.push({ title: m[1].replace(/:$/, ''), body: block.slice(m[0].length) });
+    else if (out.length) out[out.length - 1].body += '\n\n' + block;
+    else out.push({ title: 'What it is', body: block });
+  }
+  return out;
+}
+
+/** Prerequisites first: a stable topological order that keeps the recorded date order where it can. */
+function orderByPrerequisites(list: LearningEntry[]): LearningEntry[] {
+  const byslug = new Map(list.map((l) => [l.slug, l]));
+  const done = new Set<string>();
+  const out: LearningEntry[] = [];
+  const visit = (l: LearningEntry, stack: Set<string>) => {
+    if (done.has(l.slug) || stack.has(l.slug)) return;
+    stack.add(l.slug);
+    for (const p of l.prerequisites) { const q = byslug.get(p); if (q) visit(q, stack); }
+    stack.delete(l.slug);
+    done.add(l.slug);
+    out.push(l);
+  };
+  for (const l of list) visit(l, new Set());
+  return out;
+}
+
+function titleOf(record: ProjectRecord, slug: string): string {
+  return record.learning.find((l) => l.slug === slug)?.title ?? slug;
+}
+function minutes(l: LearningEntry): number {
+  const words = l.body.split(/\s+/).length + l.questions.reduce((n, q) => n + q.q.split(/\s+/).length + q.a.split(/\s+/).length, 0);
+  return Math.max(1, Math.round(words / 180));
+}
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }

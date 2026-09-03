@@ -8,7 +8,7 @@ import { basename, join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, sessionFile } from './discover.js';
-import { readRecord } from './docs.js';
+import { codeWindow, readRecord } from './docs.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
@@ -139,7 +139,13 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
         const touched = trackedFiles(parsed.events).map((f) => f.path);
         const record = session?.cwd ? readRecord(session.cwd, touched) : undefined;
-        return record ? json(res, 200, record) : json(res, 404, { error: 'no agenttrace.json above the folder this session ran in' });
+        if (!record) return json(res, 404, { error: 'no agenttrace.json above the folder this session ran in' });
+        const file = url.searchParams.get('file');
+        if (file) {
+          const w = codeWindow(record.repoDir, file, url.searchParams.get('anchor') ?? undefined);
+          return w ? json(res, 200, w) : json(res, 404, { error: 'file not found inside the project' });
+        }
+        return json(res, 200, record);
       }
       if (parts[3] === 'events') {
         const agent = url.searchParams.get('agent');

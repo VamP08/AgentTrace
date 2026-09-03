@@ -21,11 +21,28 @@ export interface LearningEntry {
   level: 'beginner' | 'intermediate' | 'advanced';
   tags: string[];
   files: string[];
+  /** a symbol or phrase in the first file; the app shows the lines around it */
+  anchor?: string;
   prerequisites: string[];
   related: string[];
   date: string;
   updated: string;
+  session?: string;
+  questions: { q: string; a: string }[];
+  exercise?: { task: string; hint?: string; solution?: string };
   body: string;
+}
+
+/** A window of a project file, for the "in this project" section of a lesson. */
+export interface CodeWindow {
+  path: string;
+  /** 1-based line number of the first line returned */
+  start: number;
+  /** 1-based line the anchor was found on, if any */
+  anchorLine?: number;
+  lines: string[];
+  totalLines: number;
+  language: string;
 }
 
 export interface Decision {
@@ -97,6 +114,8 @@ export interface ProjectRecord {
   project: string;
   /** absolute path of the record folder */
   root: string;
+  /** absolute path of the folder holding agenttrace.json; `files` in entries are relative to it */
+  repoDir: string;
   roadmap?: RecordDoc<{ milestones: Milestone[] }>;
   stack?: RecordDoc<{ stack: StackItem[] }>;
   architecture?: RecordDoc<{ components: Component[] }>;
