@@ -56,8 +56,8 @@ export interface UsageEvent extends EventBase {
 
 export interface SnapshotEvent extends EventBase {
   kind: 'snapshot';
-  /** absolute path -> backup file name under file-history/<session>/ */
-  files: Record<string, { backup: string; version: number; backupTime: string }>;
+  /** path as the tool wrote it (often relative to cwd) -> backup under file-history/<session>/; dir is the real parent folder */
+  files: Record<string, { backup: string; version: number; backupTime: string; dir?: string }>;
 }
 
 export interface AgentSpawnEvent extends EventBase {
@@ -66,6 +66,14 @@ export interface AgentSpawnEvent extends EventBase {
   agentType: string;
   description: string;
   brief: string;
+}
+
+/** Derived, not read: a technology first seen in this session, with the line that gave it away. */
+export interface StackDetectedEvent extends EventBase {
+  kind: 'stack_detected';
+  tech: string;
+  evidence: string;
+  file?: string;
 }
 
 /** Any record the parser does not turn into a richer event. Never dropped, so nothing is hidden. */
@@ -86,7 +94,20 @@ export type Event =
   | UsageEvent
   | SnapshotEvent
   | AgentSpawnEvent
+  | StackDetectedEvent
   | RawEvent;
+
+export interface FileVersion {
+  /** backup file name under file-history/<session>/ */
+  backup: string;
+  version: number;
+  backupTime: string;
+}
+
+export interface TrackedFile {
+  path: string;
+  versions: FileVersion[];
+}
 
 export interface Session {
   id: string;

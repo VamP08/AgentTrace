@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, sessionFile } from './discover.js';
-import { parseFile } from './parse.js';
+import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
+import { parseFile, type ParsedFile } from './parse.js';
+import { detectStack } from './stack.js';
 import { Tailer, type TailBatch, type TailGone } from './tail.js';
 
 export const claudeRoot = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
@@ -27,6 +29,23 @@ function slugFor(id: string): string | undefined {
 
 const SESSION_ID = /^[0-9a-f-]{36}$/;
 
+// ponytail: per-session set of technologies already reported, so live batches only add new ones.
+const stackSeen = new Map<string, Set<string>>();
+
+/** Parse the main transcript and append derived stack events; resets the live seen-set for the session. */
+async function history(slug: string, id: string): Promise<ParsedFile> {
+  const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+  const seen = new Set<string>();
+  stackSeen.set(id, seen);
+  parsed.events.push(...detectStack(parsed.events, seen));
+  return parsed;
+}
+
+function text(res: ServerResponse, status: number, body: string) {
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' });
+  res.end(body);
+}
+
 export async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const parts = url.pathname.split('/').filter(Boolean);
@@ -44,14 +63,25 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       if (parts[3] === 'agents') return json(res, 200, discoverAgents(claudeRoot, slug, id));
       if (parts[3] === 'events') {
         const agent = url.searchParams.get('agent');
-        let file = sessionFile(claudeRoot, slug, id);
-        if (agent) {
-          const info = discoverAgents(claudeRoot, slug, id).find((a) => a.agentId === agent);
-          if (!info) return json(res, 404, { error: 'unknown agent' });
-          file = join(claudeRoot, 'projects', slug, id, info.file);
+        if (!agent) return json(res, 200, await history(slug, id));
+        const info = discoverAgents(claudeRoot, slug, id).find((a) => a.agentId === agent);
+        if (!info) return json(res, 404, { error: 'unknown agent' });
+        const file = join(claudeRoot, 'projects', slug, id, info.file);
+        return json(res, 200, await parseFile(file, { sessionId: id, agentId: agent }));
+      }
+      if (parts[3] === 'files') {
+        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+        const backup = url.searchParams.get('backup');
+        const path = url.searchParams.get('path');
+        if (backup) {
+          const body = readVersion(claudeRoot, id, backup);
+          return body === undefined ? json(res, 404, { error: 'unknown version' }) : text(res, 200, body);
         }
-        const parsed = await parseFile(file, { sessionId: id, agentId: agent ?? undefined });
-        return json(res, 200, parsed);
+        if (path) {
+          const body = readCurrent(parsed.events, path);
+          return body === undefined ? json(res, 404, { error: 'file not tracked or missing' }) : text(res, 200, body);
+        }
+        return json(res, 200, trackedFiles(parsed.events));
       }
     }
     return json(res, 404, { error: 'not found' });
@@ -82,15 +112,17 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
       if (!slug) return;
       wants.set(ws, msg.sessionId);
       // History first, then the live stream continues from whatever the tailer sees next.
-      const history = await parseFile(sessionFile(claudeRoot, slug, msg.sessionId), { sessionId: msg.sessionId });
-      send(ws, { type: 'history', sessionId: msg.sessionId, events: history.events, parseErrors: history.parseErrors });
+      const h = await history(slug, msg.sessionId);
+      send(ws, { type: 'history', sessionId: msg.sessionId, events: h.events, parseErrors: h.parseErrors });
       send(ws, { type: 'agents', sessionId: msg.sessionId, agents: discoverAgents(claudeRoot, slug, msg.sessionId) });
     });
     ws.on('close', () => wants.delete(ws));
   });
 
   tailer.on('events', (b: TailBatch) => {
-    for (const [ws, sid] of wants) if (sid === b.sessionId) send(ws, { type: 'events', sessionId: b.sessionId, agentId: b.agentId, events: b.events });
+    const seen = stackSeen.get(b.sessionId);
+    const events = seen && !b.agentId ? [...b.events, ...detectStack(b.events, seen)] : b.events;
+    for (const [ws, sid] of wants) if (sid === b.sessionId) send(ws, { type: 'events', sessionId: b.sessionId, agentId: b.agentId, events });
   });
   tailer.on('gone', (g: TailGone) => {
     for (const [ws, sid] of wants) if (sid === g.sessionId && !g.agentId) send(ws, { type: 'sessions', sessions: discoverSessions(claudeRoot) });

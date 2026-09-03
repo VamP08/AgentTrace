@@ -139,9 +139,20 @@ export function parseRecord(rec: Block, ctx: ParseContext): Event[] {
       const tracked = rec.snapshot?.trackedFileBackups ?? {};
       for (const [path, v] of Object.entries<Block>(tracked)) {
         if (!v || typeof v.backupFileName !== 'string') continue;
-        files[path] = { backup: v.backupFileName, version: num(v.version), backupTime: String(v.backupTime ?? '') };
+        files[path] = { backup: v.backupFileName, version: num(v.version), backupTime: String(v.backupTime ?? ''), dir: typeof v.realParentDir === 'string' ? v.realParentDir : undefined };
       }
       out.push({ ...base, kind: 'snapshot', id: `${id}:snapshot`, files });
+      break;
+    }
+    case 'file-history-delta': {
+      // one file's new backup, same shape as a snapshot entry
+      const b = rec.backup;
+      const path = rec.trackingPath;
+      const files: SnapshotEvent['files'] = {};
+      if (typeof path === 'string' && b && typeof b.backupFileName === 'string') {
+        files[path] = { backup: b.backupFileName, version: num(b.version), backupTime: String(b.backupTime ?? ''), dir: typeof b.realParentDir === 'string' ? b.realParentDir : undefined };
+      }
+      out.push({ ...base, kind: 'snapshot', id: `${id}:delta`, files });
       break;
     }
     default: {

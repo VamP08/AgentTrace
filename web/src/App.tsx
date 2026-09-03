@@ -2,6 +2,10 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { fetchSessions, openSocket } from './api';
 import { initial, reduce } from './store';
 import { Timeline } from './views/Timeline';
+import { Diffs } from './views/Diffs';
+import { StackStrip } from './components/StackStrip';
+
+const READY: Record<string, boolean> = { Timeline: true, Diffs: true };
 
 const TABS = ['Timeline', 'Diffs', 'Agents', 'Context', 'Learn'] as const;
 
@@ -71,7 +75,7 @@ export function App() {
         <main className="main">
           <div className="tabs">
             {TABS.map((t) => (
-              <button key={t} className={`tab ${t === tab ? 'sel' : ''}`} onClick={() => setTab(t)} disabled={t !== 'Timeline'} title={t !== 'Timeline' ? 'Coming in a later milestone' : undefined}>
+              <button key={t} className={`tab ${t === tab ? 'sel' : ''}`} onClick={() => setTab(t)} disabled={!READY[t]} title={!READY[t] ? 'Coming in a later milestone' : undefined}>
                 {t}
               </button>
             ))}
@@ -83,9 +87,13 @@ export function App() {
               A live session streams as it happens. A past one replays from its first line. Every tool call
               opens on a plain-language line before its raw input.
             </div>
-          ) : tab === 'Timeline' ? (
-            <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} />
-          ) : null}
+          ) : (
+            <div className="stage">
+              <StackStrip events={s.events} />
+              {tab === 'Timeline' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} />}
+              {tab === 'Diffs' && <Diffs sessionId={current.id} events={s.events} />}
+            </div>
+          )}
         </main>
       </div>
     </div>

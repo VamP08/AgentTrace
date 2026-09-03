@@ -32,7 +32,8 @@ body {
 }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
-code, pre { font-family: var(--font-mono); font-size: 12.5px; }
+/* No ligatures in code: a learner must see the two characters that were typed, not one glyph. */
+code, pre, .badge, .ver, .name, .arg { font-family: var(--font-mono); font-size: 12.5px; font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 /* ---------- frame ---------- */
@@ -71,6 +72,40 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 /* ---------- main ---------- */
 .main { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.stage { display: flex; flex-direction: column; min-height: 0; }
+.stage > .scroll, .stage > .split { flex: 1; min-height: 0; }
+
+/* ---------- stack strip ---------- */
+.stack { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.stack .lab, .files h2, .pane .lab { font-family: var(--font-display); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paper-mute); }
+.stack .lab { margin-right: 6px; }
+.badge { font-family: var(--font-mono); font-size: 11.5px; padding: 2px 8px; border-radius: 3px; background: var(--ink-3); color: var(--paper-dim); border-left: 2px solid var(--paper-mute); cursor: help; }
+.badge.language, .badge.runtime { border-left-color: var(--copper); }
+.badge.ui, .badge.framework { border-left-color: var(--lake); }
+.badge.test, .badge.build { border-left-color: var(--moss); }
+.badge.storage, .badge.data, .badge.ai { border-left-color: var(--paper); }
+
+/* ---------- diffs view ---------- */
+.split { display: grid; grid-template-columns: 340px 1fr; min-height: 0; overflow: hidden; }
+.files { border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 0; }
+.files h2 { margin: 4px 16px 8px; font-weight: 500; }
+.file { padding: 8px 16px; border-bottom: 1px solid rgba(51, 58, 76, 0.5); }
+.fpath { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file .badges { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+.versions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.ver { font-family: var(--font-mono); font-size: 11.5px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--paper-dim); }
+.ver.sel { border-color: var(--copper); color: var(--copper); }
+.ver.now { border-style: dashed; }
+.diffpane { overflow: auto; min-height: 0; }
+.diffhead { display: flex; gap: 14px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--ink); flex-wrap: wrap; }
+.diffhead .stats { margin-left: auto; font-family: var(--font-mono); font-size: 12px; }
+.diffhead .add { color: var(--moss); font-weight: 500; }
+.diffhead .del { color: var(--ember); font-weight: 500; }
+pre.diff { padding: 12px 20px 40px; line-height: 1.5; }
+pre.diff .same { color: var(--paper-dim); }
+pre.diff .add { color: var(--paper); background: rgba(141, 179, 122, 0.14); display: inline-block; width: 100%; }
+pre.diff .del { color: var(--paper); background: rgba(217, 100, 90, 0.16); display: inline-block; width: 100%; }
+.empty.small { padding: 12px 16px; font-size: 12.5px; }
 .tabs { display: flex; gap: 4px; padding: 8px 20px 0; border-bottom: 1px solid var(--line); align-items: center; }
 .tab { padding: 8px 12px; color: var(--paper-dim); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
 .tab.sel { color: var(--paper); border-bottom-color: var(--copper); }
