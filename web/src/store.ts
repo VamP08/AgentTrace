@@ -1,5 +1,6 @@
 // One reducer holds everything the screen shows. Events are kept in arrival order and deduped
 // by id, which is what lets a usage record for the same message overwrite an earlier one.
+// Subagent transcripts are kept apart from the main one, keyed by agent id.
 import type { AgentInfo, Event, ServerMessage, Session } from '@agenttrace/shared';
 
 export interface State {
@@ -8,6 +9,7 @@ export interface State {
   events: Event[];
   index: Map<string, number>;
   agents: AgentInfo[];
+  agentEvents: Record<string, Event[]>;
   parseErrors: number;
   connected: boolean;
   loading: boolean;
@@ -19,6 +21,7 @@ export const initial: State = {
   events: [],
   index: new Map(),
   agents: [],
+  agentEvents: {},
   parseErrors: 0,
   connected: false,
   loading: false,
@@ -29,6 +32,7 @@ export type Action =
   | { type: 'sessions'; sessions: Session[] }
   | { type: 'select'; id: string }
   | { type: 'socket'; open: boolean }
+  | { type: 'agentHistory'; agentId: string; events: Event[] }
   | { type: 'server'; msg: ServerMessage };
 
 function merge(events: Event[], index: Map<string, number>, incoming: Event[]): [Event[], Map<string, number>] {
@@ -46,15 +50,24 @@ function merge(events: Event[], index: Map<string, number>, incoming: Event[]): 
   return [next, idx];
 }
 
+function appendAgent(store: Record<string, Event[]>, agentId: string, incoming: Event[]): Record<string, Event[]> {
+  const seen = new Set((store[agentId] ?? []).map((e) => e.id));
+  const fresh = incoming.filter((e) => !seen.has(e.id));
+  if (!fresh.length) return store;
+  return { ...store, [agentId]: [...(store[agentId] ?? []), ...fresh] };
+}
+
 export function reduce(s: State, a: Action): State {
   switch (a.type) {
     case 'sessions':
       return { ...s, sessions: a.sessions };
     case 'select':
       if (a.id === s.selected) return s;
-      return { ...s, selected: a.id, events: [], index: new Map(), agents: [], parseErrors: 0, loading: true };
+      return { ...s, selected: a.id, events: [], index: new Map(), agents: [], agentEvents: {}, parseErrors: 0, loading: true };
     case 'socket':
       return { ...s, connected: a.open };
+    case 'agentHistory':
+      return { ...s, agentEvents: { ...s.agentEvents, [a.agentId]: a.events } };
     case 'server': {
       const m = a.msg;
       if (m.type === 'sessions') return { ...s, sessions: m.sessions };
@@ -64,6 +77,7 @@ export function reduce(s: State, a: Action): State {
         return { ...s, events, index, parseErrors: m.parseErrors, loading: false };
       }
       if (m.type === 'events') {
+        if (m.agentId) return { ...s, agentEvents: appendAgent(s.agentEvents, m.agentId, m.events), batches: s.batches + 1 };
         const [events, index] = merge(s.events, s.index, m.events);
         return { ...s, events, index, batches: s.batches + 1 };
       }

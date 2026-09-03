@@ -252,3 +252,22 @@ pre.diff .add, pre.diff .del { color: var(--text); display: inline-block; width:
   .dot.pulse { animation: none; }
   .chev { transition: none; }
 }
+
+/* ---------- helpers view ---------- */
+.tree .node { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; width: 100%; padding: 8px 16px; text-align: left; border-bottom: 1px solid var(--line); align-items: center; }
+.tree .node.root { color: var(--text-2); }
+.tree button.node:hover { background: var(--hover); }
+.tree .node.sel { background: var(--sel); box-shadow: inset 2px 0 0 var(--accent); }
+.tree .node .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree .node .c { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.tree .node .c.state { color: var(--text-2); font-weight: 500; }
+.tree .node .c.state.ok { color: var(--ok); }
+.agentpane { display: flex; flex-direction: column; overflow: hidden; }
+.agent-stage { flex: 1; min-height: 200px; display: flex; flex-direction: column; }
+.agent-stage > .scroll { flex: 1; min-height: 0; }
+.brief { margin: 12px 24px 0; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--panel); overflow: hidden; }
+.brief.report { margin-bottom: 12px; border-color: var(--line); }
+.brief.report.err .brief-h { color: var(--fail); }
+.brief-h { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.brief-h .c { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.brief pre { padding: 10px 12px; max-height: 260px; overflow: auto; }

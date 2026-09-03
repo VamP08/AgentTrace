@@ -4,10 +4,11 @@ import { fetchSessions, openSocket } from './api';
 import { initial, reduce } from './store';
 import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
+import { Agents } from './views/Agents';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
-const VIEWS = [{ id: 'Turns' }, { id: 'Files' }] as const;
+const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -170,6 +171,16 @@ export function App() {
               <StackStrip events={s.events} />
               {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
+              {view === 'Helpers' && (
+                <Agents
+                  sessionId={current.id}
+                  events={s.events}
+                  agents={s.agents}
+                  agentEvents={s.agentEvents}
+                  live={current.live}
+                  onLoadAgent={(agentId, events) => dispatch({ type: 'agentHistory', agentId, events })}
+                />
+              )}
             </div>
           </>
         )}
