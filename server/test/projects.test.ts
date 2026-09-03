@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Event, Session } from '@agenttrace/shared';
-import { foldProjects, turnsOf } from '../src/projects.js';
+import { foldProjects, label, turnsOf } from '../src/projects.js';
+
+describe('label', () => {
+  it('keeps a typed prompt and names what a system message actually was', () => {
+    expect(label('fix it\nplease')).toBe('fix it');
+    expect(label('<task-notification>\n<task-id>abc</task-id>')).toBe('A background task finished');
+    expect(label('<system-reminder>\nthe files on disk have changed since you read them')).toBe('A reminder arrived');
+    expect(label('<unknown-tag>\nsomething long enough to read here')).toBe('something long enough to read here');
+    expect(label('<unknown-tag>')).toBe('A system message arrived');
+  });
+});
 
 const session = (id: string, cwd: string, live = false): Session => ({
   id, projectSlug: 'slug', cwd, title: id, startedAt: '2026-09-03T10:00:00Z', updatedAt: '2026-09-03T12:00:00Z', bytes: 10, live,

@@ -132,7 +132,7 @@ export function turnsOf(events: Event[], session: Session, manifests: { repoDir:
     if (e.kind === 'user') {
       close();
       cur = {
-        ref: { sessionId: session.id, n: turns.length + 1, prompt: e.text.split('\n')[0].slice(0, 200), startTs: e.ts, endTs: e.ts, calls: 0, failed: 0, edits: {}, also: [] },
+        ref: { sessionId: session.id, n: turns.length + 1, prompt: label(e.text), startTs: e.ts, endTs: e.ts, calls: 0, failed: 0, edits: {}, also: [] },
         events: [],
       };
       continue;
