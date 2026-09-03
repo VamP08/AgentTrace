@@ -94,6 +94,25 @@ function editedPaths(events: Event[], cwd: string): string[] {
   return out;
 }
 
+/**
+ * A turn's label. Most turns open with something a person typed. Some open with a system
+ * notification wrapped in a tag, and showing the tag teaches nobody anything, so those say
+ * what actually happened instead.
+ */
+export function label(text: string): string {
+  const first = text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? '';
+  if (!first.startsWith('<')) return first.slice(0, 200);
+  const tag = /^<([a-z-]+)/i.exec(first)?.[1] ?? '';
+  const said: Record<string, string> = {
+    'task-notification': 'A background task finished',
+    'local-command-caveat': 'A local command was run',
+    'system-reminder': 'A reminder arrived',
+    'command-name': 'A command was invoked',
+  };
+  const rest = text.replace(/<[^>]*>/g, ' ').split('\n').map((l) => l.trim()).find((l) => l.length > 12);
+  return said[tag] ?? (rest ? rest.slice(0, 200) : 'A system message arrived');
+}
+
 /** Split one session's events into turns and attach each turn to the repositories it edited. */
 export function turnsOf(events: Event[], session: Session, manifests: { repoDir: string; root: string }[]): TurnRef[] {
   const turns: TurnRef[] = [];

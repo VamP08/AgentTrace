@@ -30,7 +30,7 @@ export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
   const [view, setView] = useState<ViewId>('Turns');
   const [query, setQuery] = useState('');
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
   const [setup, setSetup] = useState(false);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -81,6 +81,7 @@ export function App() {
   const selectProject = (root: string) => {
     setSetup(false);
     setOpenProject(root);
+    setOpened((o) => ({ ...o, [root]: true }));
   };
 
   const current = s.sessions.find((x) => x.id === s.selected);
@@ -152,11 +153,11 @@ export function App() {
             <ProjectGroup
               key={p.root}
               p={p}
-              open={!closed[p.root]}
+              open={!!opened[p.root]}
               sessions={sessionsOf(p)}
               selectedProject={openProject}
               selectedSession={s.selected}
-              onToggle={() => setClosed({ ...closed, [p.root]: !closed[p.root] })}
+              onToggle={() => setOpened({ ...opened, [p.root]: !opened[p.root] })}
               onProject={selectProject}
               onSession={select}
             />
@@ -173,11 +174,11 @@ export function App() {
                   <ProjectGroup
                     key={p.root}
                     p={p}
-                    open={!closed[p.root]}
+                    open={!!opened[p.root]}
                     sessions={sessionsOf(p)}
                     selectedProject={openProject}
                     selectedSession={s.selected}
-                    onToggle={() => setClosed({ ...closed, [p.root]: !closed[p.root] })}
+                    onToggle={() => setOpened({ ...opened, [p.root]: !opened[p.root] })}
                     onProject={selectProject}
                     onSession={select}
                   />
