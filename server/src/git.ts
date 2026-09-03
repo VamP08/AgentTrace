@@ -9,6 +9,27 @@ export interface Commit {
   ts: string;
   subject: string;
   files: { path: string; added: number; removed: number }[];
+  /** false when the commit sits on a branch that has not reached the default branch */
+  merged: boolean;
+}
+
+/** The branch a repository publishes: origin's HEAD when known, else main or master, else HEAD. */
+export function defaultBranch(cwd: string): string {
+  try {
+    const ref = execFileSync('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim();
+    if (ref) return ref;
+  } catch {
+    // no remote HEAD recorded
+  }
+  for (const b of ['main', 'master']) {
+    try {
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', b], { cwd, encoding: 'utf8', timeout: 5_000, windowsHide: true });
+      return b;
+    } catch {
+      // try the next
+    }
+  }
+  return 'HEAD';
 }
 
 const SEP = '';
@@ -18,7 +39,8 @@ export function commitsBetween(cwd: string, since: string, until: string): Commi
   if (!cwd || !existsSync(join(cwd, '.git')) && !isInsideRepo(cwd)) return [];
   let out: string;
   try {
-    out = execFileSync('git', ['log', `--since=${since}`, `--until=${until}`, `--format=${SEP}%h%x1f%cI%x1f%s`, '--numstat', '--no-merges'], { cwd, encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    // every local branch and the default branch, so branch work appears and can be marked
+    out = execFileSync('git', ['log', '--branches', defaultBranch(cwd), `--since=${since}`, `--until=${until}`, `--format=${SEP}%h%x1f%cI%x1f%s`, '--numstat', '--no-merges'], { cwd, encoding: 'utf8', timeout: 15_000, windowsHide: true, maxBuffer: 50_000_000 });
   } catch {
     return [];
   }
@@ -32,9 +54,21 @@ export function commitsBetween(cwd: string, since: string, until: string): Commi
       .map((l) => l.split('\t'))
       .filter((p) => p.length === 3)
       .map(([a, r, path]) => ({ path, added: a === '-' ? 0 : Number(a), removed: r === '-' ? 0 : Number(r) }));
-    commits.push({ sha, ts, subject, files });
+    commits.push({ sha, ts, subject, files, merged: true });
   }
+  // ponytail: one ancestor check per commit; a session window holds tens of commits, not thousands.
+  const main = defaultBranch(cwd);
+  for (const c of commits) c.merged = isAncestor(cwd, c.sha, main);
   return commits;
+}
+
+function isAncestor(cwd: string, sha: string, branch: string): boolean {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', sha, branch], { cwd, encoding: 'utf8', timeout: 5_000, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Every repository a session worked in: its cwd if that is one, plus the repos holding the files it touched, most-touched first. */

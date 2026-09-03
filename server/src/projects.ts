@@ -56,7 +56,14 @@ export function repoOf(dir: string): string | null {
   let root: string | null = null;
   if (existsSync(probe)) {
     try {
-      root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: probe, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || null;
+      // The common git dir is shared by every worktree of a repository; its parent is the main
+      // working copy. Asking for the top level alone would make each worktree its own project.
+      const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: probe, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim();
+      root = common ? (common.replace(/[\\/]\.git$/i, '') || null) : null;
+      if (root && /[\\/]\.git$/i.test(common) === false) {
+        // a bare or unusual layout: fall back to the top level of this working copy
+        root = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: probe, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || null;
+      }
     } catch {
       root = null;
     }
@@ -64,6 +71,20 @@ export function repoOf(dir: string): string | null {
   const out = root ? canon(root) : null;
   repoCache.set(dir, out);
   return out;
+}
+
+const rootCommitCache = new Map<string, string | undefined>();
+/** The first commit of a repository: the same in every clone and worktree, and there before any push. */
+export function rootCommitOf(root: string): string | undefined {
+  if (rootCommitCache.has(root)) return rootCommitCache.get(root);
+  let sha: string | undefined;
+  try {
+    sha = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim().split('\n').pop() || undefined;
+  } catch {
+    sha = undefined;
+  }
+  rootCommitCache.set(root, sha);
+  return sha;
 }
 
 function remoteOf(root: string): string | undefined {
@@ -127,19 +148,19 @@ function indexPath(claudeRoot: string): string {
   return join(claudeRoot, 'agenttrace', 'projects-index.json');
 }
 
-function loadIndex(claudeRoot: string): IndexFile {
+function loadIndex(claudeRoot: string): { sessions?: IndexFile; manifests?: string } {
   try {
     const raw = JSON.parse(readFileSync(indexPath(claudeRoot), 'utf8'));
-    return raw && raw.version === 2 ? raw.sessions : {};
+    return raw && raw.version === 3 ? raw : {};
   } catch {
     return {};
   }
 }
 
-function saveIndex(claudeRoot: string, sessions: IndexFile) {
+function saveIndex(claudeRoot: string, sessions: IndexFile, manifests: string) {
   try {
     mkdirSync(dirname(indexPath(claudeRoot)), { recursive: true });
-    writeFileSync(indexPath(claudeRoot), JSON.stringify({ version: 2, sessions }));
+    writeFileSync(indexPath(claudeRoot), JSON.stringify({ version: 3, manifests, sessions }));
   } catch {
     // the index is a cache; failing to write it only costs time next run
   }
@@ -170,7 +191,11 @@ function manifestsFor(sessions: Session[]): { repoDir: string; root: string }[] 
 export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
   const sessions = discoverSessions(claudeRoot);
   const manifests = manifestsFor(sessions);
-  const cached = loadIndex(claudeRoot);
+  // Attribution depends on which record folders exist, so a new agenttrace.json anywhere
+  // invalidates every cached session; otherwise old sessions would keep their old owners.
+  const manifestKey = manifests.map((m) => `${m.repoDir}=>${m.root}`).sort().join('|');
+  const loaded = loadIndex(claudeRoot);
+  const cached: IndexFile = loaded.manifests === manifestKey ? (loaded.sessions ?? {}) : {};
   const next: IndexFile = {};
   for (const s of sessions) {
     const hit = cached[s.id];
@@ -181,7 +206,7 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
     const parsed = await parseFile(sessionFile(claudeRoot, s.projectSlug, s.id), { sessionId: s.id });
     next[s.id] = sessionFacts(parsed.events, s, manifests);
   }
-  saveIndex(claudeRoot, next);
+  saveIndex(claudeRoot, next, manifestKey);
   return { facts: new Map(Object.entries(next)), sessions: new Map(sessions.map((s) => [s.id, s])) };
 }
 
@@ -192,7 +217,7 @@ export function foldProjects(facts: Map<string, SessionFacts>, sessions: Map<str
   const place = (root: string, s: Session, f: SessionFacts, link: SessionLink) => {
     const remote = remoteOf(root);
     const gh = githubId(remote);
-    const id = gh ?? root;
+    const id = gh ?? (rootCommitOf(root) ? `commit:${rootCommitOf(root)}` : root);
     let p = byId.get(id);
     if (!p) {
       const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;

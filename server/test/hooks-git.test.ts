@@ -41,6 +41,15 @@ describe('git', () => {
     expect(commits[0]).toMatchObject({ subject: 'first', files: [{ path: 'a.txt', added: 2, removed: 0 }] });
     expect(showCommit(repo, commits[0].sha)).toContain('+one');
     expect(showCommit(repo, '../../etc')).toBeUndefined();
+    expect(commits[0].merged).toBe(true);
+    // a commit on a side branch that never reached main is listed, marked as not merged
+    g('checkout', '-q', '-b', 'side');
+    writeFileSync(join(repo, 'b.txt'), 'side\n');
+    g('add', 'b.txt');
+    g('commit', '-q', '-m', 'on a branch');
+    g('checkout', '-q', '-');
+    const withBranch = commitsBetween(repo, '2026-09-03T05:00:00Z', '2026-09-03T05:10:00Z');
+    expect(withBranch.map((c) => [c.subject, c.merged]).sort()).toEqual([['first', true], ['on a branch', false]]);
     expect(commitsBetween(repo, '2026-09-04T00:00:00Z', '2026-09-05T00:00:00Z')).toEqual([]);
     expect(commitsBetween(tmpdir(), '2026-09-03T05:00:00Z', '2026-09-03T05:10:00Z')).toEqual([]);
   });

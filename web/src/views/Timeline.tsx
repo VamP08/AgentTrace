@@ -29,7 +29,7 @@ type Row =
   | { key: string; kind: 'assistant' | 'context' | 'raw'; ev: Event }
   | { key: string; kind: 'tool'; ev: ToolCallEvent; result?: ToolResultEvent; agent?: AgentInfo; first: boolean };
 
-export interface Commit { sha: string; ts: string; subject: string; repo?: string; files: { path: string; added: number; removed: number }[] }
+export interface Commit { sha: string; ts: string; subject: string; repo?: string; merged?: boolean; files: { path: string; added: number; removed: number }[] }
 
 interface Props {
   events: Event[];
@@ -269,6 +269,7 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
         <div className="who">Commit</div>
         <div className="text">
           {c.repo && <span className="c repo">{c.repo} </span>}<span className="mono sha">{c.sha}</span> {c.subject}
+          {c.merged === false && <span className="pill fail" title="On a branch that has not reached the default branch"> not merged</span>}
           <span className="c"> · {c.files.length} file{c.files.length === 1 ? '' : 's'} <b className="add">+{added}</b> <b className="del">−{removed}</b></span>
           {sessionId && <a className="c link" href={`/api/sessions/${sessionId}/commits?sha=${c.sha}`} target="_blank" rel="noreferrer">show diff</a>}
         </div>
