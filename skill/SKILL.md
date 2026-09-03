@@ -20,7 +20,20 @@ The project's record root is named in `agenttrace.json` at the root of the proje
 { "contract": 1, "project": "AgentTrace", "record": "e:/Work/Live/code/Project/docs/AgentTrace" }
 ```
 
-If the file is missing, ask the user where the record should live, create the file, and continue.
+If the file is missing, ask where the record should live before writing anything. Offer these
+three, in this order, and say what each costs:
+
+1. **Inside the repository**, at `agenttrace/`. The lessons travel with the code and are reviewed
+   in the same pull request. Cost: they are public if the repository is public, so nothing
+   sensitive can go in them.
+2. **A sibling folder**, at `../<Project>-notes/`. Private by default, still next to the code.
+   Cost: a second folder to back up, and it is easy to forget when the repository is cloned.
+3. **One notes repository for every project**, at `<path>/<Project>/`. Everything in one place,
+   versioned together, private. Cost: the notes live away from the code they describe.
+
+Write the answer into `agenttrace.json` and continue. Never guess: the choice decides whether
+these files can be published, and only the owner knows that.
+
 Every path below is relative to `record`.
 
 ```

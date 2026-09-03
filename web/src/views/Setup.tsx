@@ -51,7 +51,13 @@ export function Setup({ onClose }: { onClose: () => void }) {
             {st.skillInstalled && <button className="btn sm" onClick={installSkill} disabled={busy}>{busy ? 'Installing…' : 'Reinstall'}</button>}
 
             <h3>4. Turn it on for a project</h3>
-            <p>Choose where that project's notes should live. Put this file at the project's root, with your path:</p>
+            <p>First decide where that project's lessons should live. There are three usual answers:</p>
+            <ul>
+              <li><b>Inside the repository</b>, at <code>agenttrace/</code>. They travel with the code and get reviewed with it. They are public if the repository is public.</li>
+              <li><b>A sibling folder</b>, at <code>../&lt;Project&gt;-notes/</code>. Private, still beside the code. One more folder to back up.</li>
+              <li><b>One notes repository for everything</b>, at <code>&lt;path&gt;/&lt;Project&gt;/</code>. All projects in one private place, away from the code.</li>
+            </ul>
+            <p>Then put this file at the project's root, with the path you chose:</p>
             <pre className="code">agenttrace.json{'\n'}{st.manifestExample}</pre>
             <p>Then add this to the project's <code>CLAUDE.md</code> so every session follows the skill:</p>
             <pre className="code">{st.snippet}</pre>
