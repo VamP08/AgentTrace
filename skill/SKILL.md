@@ -34,6 +34,27 @@ three, in this order, and say what each costs:
 Write the answer into `agenttrace.json` and continue. Never guess: the choice decides whether
 these files can be published, and only the owner knows that.
 
+The record folder belongs to this contract and to nothing else. Two rules protect what the owner
+already keeps:
+
+- **Never touch a file the contract does not name.** Do not move, rename, merge, rewrite or
+  delete the project's existing documents, wherever they are, and do not copy them into the
+  record. The record may cite them by path.
+- **Names clash across letter case.** Windows and macOS treat `ROADMAP.md` and `roadmap.md` as
+  one file. Before the first write, list the chosen folder. If it already holds any file or
+  folder whose name matches a record name ignoring case (`roadmap.md`, `stack.md`,
+  `architecture.md`, `design.md`, `gaps.md`, `learning`, `decisions`, `journal`) that this
+  contract did not write, put the record in a subfolder named `agenttrace` inside it, name that
+  subfolder in `agenttrace.json`, and say so. Never overwrite.
+
+Then register it, so the app can still find the record if this folder is later moved or deleted:
+
+    node ~/.claude/skills/agenttrace/register.mjs
+
+from the repository root (`%USERPROFILE%\.claude\skills\agenttrace\register.mjs` on Windows; honour
+`CLAUDE_CONFIG_DIR` when it is set). It writes one entry to `agenttrace/repos.json` beside the
+coding tool's own files and prints what it registered. Run it again whenever the manifest changes.
+
 Every path below is relative to `record`.
 
 ```
@@ -50,6 +71,24 @@ Every path below is relative to `record`.
 
 Slugs are lowercase, hyphenated, unique within their folder. Check the folder before writing so a
 concept gets one file, not two. If the concept already has a file, update it and bump `updated`.
+
+## Alongside documentation the project already keeps
+
+Many projects already have a documentation habit: an instruction file that names documents to
+write, a `docs/` folder with its own pattern, an ADR directory, a dated status log. That habit
+continues unchanged. The record is written in addition to it, never instead of it, and never
+merged with it.
+
+- Keep following the project's own instructions for its own documents. If they say to update
+  `ARCHITECTURE.md` in `docs/`, update it there as before; then update the record's
+  `architecture.md` as well. Two documents, two purposes: theirs is for the project, the record
+  is for the reader of AgentTrace.
+- When the two would say the same thing, the record cites the project's document by path and
+  adds what the contract asks for (the plain-language explanation, the diagram, the anchor into
+  the code) rather than duplicating it.
+- An instruction elsewhere that names a document with the same name as a record file refers to
+  the project's document, not the record's. The record's files are only ever the ones under the
+  path in `agenttrace.json`.
 
 ## When to write what
 
@@ -353,6 +392,63 @@ gaps:
 
 `severity` is `low`, `medium`, `high`. `status` is `open` or `fixed`. Never delete a gap; set
 `status: fixed` and `fixed:` date, and add one line under the heading saying what changed.
+
+## Backfill: a repository that existed before the record
+
+A repository built before this skill was in use has history but no record. Backfill writes the
+record from that history. Trigger: the owner asks for it (`/agenttrace backfill`, "backfill the
+record", "write the record for this repo") in a session inside the repository.
+
+Nothing in a backfilled record may be invented. Each document has evidence it needs, named in
+the table below; when that evidence is missing, the document is not written, and `gaps.md` says
+what is missing and why the document is absent. A record with three honest files is worth more
+than one with eight guessed ones.
+
+1. **Manifest and registration.** As above: if `agenttrace.json` is missing, ask where the
+   record should live, apply the clash rule, write the manifest, register it. The project's
+   existing documents stay exactly where and as they are.
+2. **Get the dossier.** With the app running, fetch it into the scratch folder and read it:
+
+       curl -s "http://127.0.0.1:4747/api/dossier?cwd=<absolute repository root>" -o <scratch>/dossier.md
+
+   It opens with the evidence that exists (sessions, commits and their date span, tags,
+   documents already in the repository, decision records, a dated status log, commits whose
+   message states a reason) and what that allows per record document. Then it lists every
+   archived session that worked in the repository (date, title, files written, helpers used,
+   commits made during it), every technology seen with its first appearance and evidence, every
+   commit on the default branch with the session it belongs to, the commit messages that state
+   a reason, and what the record already holds. If the app is not running, say so, continue
+   with git and the working copy only, and note in `gaps.md` that the session history was not
+   available.
+3. **Decide per document from the evidence.** Read the real files before writing each; one
+   document per turn.
+
+   | Document | Evidence it needs | When the evidence is missing |
+   |---|---|---|
+   | `stack.md` | the working copy: manifests, imports, config files | always writable; the why says "reason not recorded" unless a README, commit message or session states it |
+   | `architecture.md` | the working copy: folders, entry points, how they call each other | always writable, as the code is now, not as it was planned |
+   | `learning/` | the working copy, one concept at a time, anchored in a real file | always writable; "Why here" says "reason not recorded" unless a source states it |
+   | `roadmap.md` | a sequence: tags, releases, dated commits, session titles, or an existing roadmap or status log | one commit and no documents: write the positioning from the README and a single milestone "as found on <date>", status done, and say the order of work is unknown |
+   | `decisions/` | a stated reason: an existing ADR, a commit message that says why, a README section that argues a choice, a session that weighed options | no stated reason anywhere: write no decision; list the choices whose reason is unknown in `gaps.md` |
+   | `journal/` | archived sessions, or a dated status log the project already keeps | neither: write no journal; `gaps.md` says the history before the record is not on this machine |
+   | `design.md` | a UI in the working copy | no UI: not written |
+   | `gaps.md` | nothing; always written | states, per document above, what was and was not reconstructible, and every choice with no recorded reason |
+
+   The cases this covers, richest first:
+   - **Sessions, commits and documents all present.** Everything is writable; the journal has one
+     entry per session; decisions come from the documents, the commit messages and the sessions.
+   - **Commits with history, no sessions.** No journal; roadmap from tags and dated commits;
+     decisions only from commits and documents that state a reason.
+   - **Documents but a flat history.** Roadmap and decisions cite the documents; no journal.
+   - **One commit, no documents, no sessions** (an archived project). `stack.md`,
+     `architecture.md`, `learning/`, `gaps.md`, and a one-milestone `roadmap.md`. Nothing else,
+     and `gaps.md` says why.
+4. **Mark every reconstruction.** Each backfilled file carries `reconstructed: true` and a
+   `source:` line naming what it was written from (a path, a commit, a session id) in its
+   frontmatter, with `date` set to the date of the history it describes. A reader can then tell
+   a reconstruction from a record kept at the time. A lesson written from the working copy alone
+   carries `reconstructed: true` without a source.
+5. **Stop and report** what was written, what was not, and why, in one short list.
 
 ## Rules
 

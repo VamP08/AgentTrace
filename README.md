@@ -56,6 +56,17 @@ session is instructed to keep. The format is defined in `skill/SKILL.md`. The Se
 the app installs the skill, prints the `agenttrace.json` to place at a project's root, and the
 paragraph to add to that project's `CLAUDE.md`.
 
+The record sits beside whatever documentation a project already keeps and never replaces it:
+the skill writes only inside the folder named in `agenttrace.json`, and puts the record in an
+`agenttrace` subfolder when that folder already holds files with the same names.
+
+A repository built before the record existed can be backfilled. `GET /api/dossier?cwd=<repo>`
+returns a Markdown dossier of what the app knows about it: which evidence exists, the archived
+sessions that worked there, the technologies seen, every commit on the default branch with the
+session it belongs to, and the commit messages that state a reason. The skill's backfill
+section turns that into a record, writes only the documents the evidence supports, and marks
+each one `reconstructed`.
+
 ## Hooks
 
 `hooks/install-settings.mjs` registers a small logger for every Claude Code hook event and

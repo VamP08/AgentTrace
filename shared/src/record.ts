@@ -28,6 +28,10 @@ export interface LearningEntry {
   date: string;
   updated: string;
   session?: string;
+  /** written after the fact from history rather than in the session that did the work */
+  reconstructed?: boolean;
+  /** what a reconstruction was written from: a path, a commit, a session id */
+  source?: string;
   questions: { q: string; a: string }[];
   exercise?: { task: string; hint?: string; solution?: string };
   body: string;
@@ -53,6 +57,8 @@ export interface Decision {
   tags: string[];
   files: string[];
   supersedes?: string;
+  reconstructed?: boolean;
+  source?: string;
   body: string;
 }
 
@@ -67,6 +73,8 @@ export interface JournalEntry {
   decisions: string[];
   commits: string[];
   next: string[];
+  reconstructed?: boolean;
+  source?: string;
   body: string;
 }
 

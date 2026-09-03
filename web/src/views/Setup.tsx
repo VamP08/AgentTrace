@@ -61,6 +61,7 @@ export function Setup({ onClose }: { onClose: () => void }) {
               <li><b>A sibling folder</b>, at <code>../&lt;Project&gt;-notes/</code>. Private, still beside the code. One more folder to back up.</li>
               <li><b>One notes repository for everything</b>, at <code>&lt;path&gt;/&lt;Project&gt;/</code>. All projects in one private place, away from the code.</li>
             </ul>
+            <p className="now-p">Whatever documentation the project already keeps stays as it is and keeps being written; the record is added beside it, never merged with it. If the chosen folder already holds a file named like a record file in any letter case, the record goes in an <code>agenttrace</code> subfolder inside it. A repository built before the record existed can be backfilled from its history: run <code>/agenttrace backfill</code> in a session inside it while this app is running.</p>
             <p>Then put this file at the project's root, with the path you chose:</p>
             <pre className="code">agenttrace.json{'\n'}{st.manifestExample}</pre>
             <p>Then add this to the project's <code>CLAUDE.md</code> so every session follows the skill:</p>

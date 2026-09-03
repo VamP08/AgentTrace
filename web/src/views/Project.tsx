@@ -101,7 +101,18 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
             </div>
           </section>
 
-          {p.recordRoot ? (
+          {p.gone && (
+            <section className="now idle">
+              <div className="now-h">Folder no longer on disk</div>
+              <p className="now-p"><code>{p.root}</code> is gone. Its name, remote and record path are what AgentTrace remembered while it existed. The sessions are archived and still open; commits cannot be shown without the folder.</p>
+            </section>
+          )}
+          {p.recordRoot && p.recordMissing ? (
+            <section className="now idle">
+              <div className="now-h">Record folder missing</div>
+              <p className="now-p">The record for this repository is named at <code>{p.recordRoot}</code>, but that folder is not on disk. Put it back, or point <code>agenttrace.json</code> at its new place and run <code>node ~/.claude/skills/agenttrace/register.mjs</code> in the repository.</p>
+            </section>
+          ) : p.recordRoot ? (
             <section className="now idle">
               <div className="now-h">Record</div>
               <p className="now-p">Lessons for this repository are kept in <code>{p.recordRoot}</code>.</p>
@@ -110,7 +121,7 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
           ) : (
             <section className="now idle">
               <div className="now-h">No record yet</div>
-              <p className="now-p">This repository keeps no lessons. Open Setup in the sidebar for the two files that turn it on, then the next session writes as it builds.</p>
+              <p className="now-p">This repository keeps no lessons. Open a coding session inside it and run <code>/agenttrace backfill</code>. The skill asks where the record should live, fetches this repository's history from AgentTrace while it is running, and writes the record from what happened: stack, milestones, one journal entry per session, and a lesson for each technology. From then on every session adds to it as it builds.</p>
             </section>
           )}
         </div>

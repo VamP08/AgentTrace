@@ -80,8 +80,11 @@ export function findManifestFor(cwd: string, touched: string[] = []): ReturnType
 
 export function readRecord(cwd: string, touched: string[] = []): ProjectRecord | undefined {
   const found = findManifestFor(cwd, touched);
-  if (!found) return undefined;
-  const { manifest, root, repoDir } = found;
+  return found && readRecordAt(found);
+}
+
+/** Read a record whose location is already known: from a manifest, or from the registry once the repository folder is gone. */
+export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectManifest; root: string; repoDir: string }): ProjectRecord | undefined {
   const unparsed: ProjectRecord['unparsed'] = [];
   const learning = readFolder<LearningEntry>(root, 'learning', unparsed, (slug, d, body) => ({
     slug,
@@ -97,6 +100,8 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
     date: str(d.date),
     updated: str(d.updated, str(d.date)),
     session: d.session ? String(d.session) : undefined,
+    reconstructed: d.reconstructed === true ? true : undefined,
+    source: d.source ? String(d.source) : undefined,
     questions: Array.isArray(d.questions) ? d.questions.filter((x: any) => x && x.q).map((x: any) => ({ q: String(x.q), a: str(x.a) })) : [],
     exercise: d.exercise && typeof d.exercise === 'object' && d.exercise.task ? { task: String(d.exercise.task), hint: d.exercise.hint ? String(d.exercise.hint) : undefined, solution: d.exercise.solution ? String(d.exercise.solution) : undefined } : undefined,
     body,
@@ -109,6 +114,8 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
     tags: list(d.tags),
     files: list(d.files),
     supersedes: d.supersedes ? String(d.supersedes) : undefined,
+    reconstructed: d.reconstructed === true ? true : undefined,
+    source: d.source ? String(d.source) : undefined,
     body,
   })).sort((a, b) => (a.date < b.date ? 1 : -1));
   const journal = readFolder<JournalEntry>(root, 'journal', unparsed, (slug, d, body) => ({
@@ -122,6 +129,8 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
     decisions: list(d.decisions),
     commits: list(d.commits),
     next: list(d.next),
+    reconstructed: d.reconstructed === true ? true : undefined,
+    source: d.source ? String(d.source) : undefined,
     body,
   })).sort((a, b) => (a.started < b.started ? 1 : -1));
   return {

@@ -8,6 +8,7 @@ import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session,
 import { discoverSessions } from './discover.js';
 import { archiveSession } from './archive.js';
 import { findManifest } from './docs.js';
+import { keyOf, loadRegistry, lookup, saveRegistry, upsert, type Registry } from './repos.js';
 import { parseFile } from './parse.js';
 
 /** What one session's transcript says about where it worked. Cached per session. */
@@ -30,6 +31,13 @@ const repoCache = new Map<string, string | null>();
 const remoteCache = new Map<string, string | undefined>();
 const canonical = new Map<string, string>();
 
+// The registry remembers every repository seen, so a folder deleted or moved since still answers
+// with its remote, first commit and record path. buildFacts loads it; tests may set it directly.
+let registry: Registry = { version: 1, repos: {} };
+export function useRegistry(reg: Registry) {
+  registry = reg;
+}
+
 /** Windows paths differ only by case for the same folder; one spelling has to win or a project splits in two. */
 export function canon(p: string): string {
   const key = resolve(p).replace(/[\\/]+$/, '').toLowerCase();
@@ -48,6 +56,16 @@ export function canon(p: string): string {
 export function repoOf(dir: string): string | null {
   const hit = repoCache.get(dir);
   if (hit !== undefined) return hit;
+  if (!existsSync(dir)) {
+    // Gone from disk: the registry knows which repository it was in, and never confuses it with
+    // whatever repository happens to own the nearest surviving ancestor.
+    const known = lookup(registry, dir);
+    if (known) {
+      const out = canon(known.root);
+      repoCache.set(dir, out);
+      return out;
+    }
+  }
   let probe = dir;
   while (!existsSync(probe)) {
     const up = dirname(probe);
@@ -84,11 +102,12 @@ export function rootCommitOf(root: string): string | undefined {
   } catch {
     sha = undefined;
   }
+  sha ??= registry.repos[keyOf(root)]?.rootCommit;
   rootCommitCache.set(root, sha);
   return sha;
 }
 
-function remoteOf(root: string): string | undefined {
+export function remoteOf(root: string): string | undefined {
   if (remoteCache.has(root)) return remoteCache.get(root);
   let url: string | undefined;
   try {
@@ -96,6 +115,7 @@ function remoteOf(root: string): string | undefined {
   } catch {
     url = undefined;
   }
+  url ??= registry.repos[keyOf(root)]?.remote;
   remoteCache.set(root, url);
   return url;
 }
@@ -191,7 +211,12 @@ function manifestsFor(sessions: Session[]): { repoDir: string; root: string }[] 
 /** Facts for every session, reusing cached entries whose transcript has not changed. */
 export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
   const sessions = discoverSessions(claudeRoot);
+  useRegistry(loadRegistry(claudeRoot));
   const manifests = manifestsFor(sessions);
+  // Records the registry knows of count too, even when no session ran near their repository.
+  for (const e of Object.values(registry.repos)) {
+    if (e.record && !manifests.some((m) => keyOf(m.root) === keyOf(e.record!))) manifests.push({ repoDir: e.root, root: e.record });
+  }
   // Attribution depends on which record folders exist, so a new agenttrace.json anywhere
   // invalidates every cached session; otherwise old sessions would keep their old owners.
   const manifestKey = manifests.map((m) => `${m.repoDir}=>${m.root}`).sort().join('|');
@@ -211,7 +236,48 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
     next[s.id] = sessionFacts(parsed.events, s, manifests);
   }
   saveIndex(claudeRoot, next, manifestKey);
+  rememberRepos(claudeRoot, next);
   return { facts: new Map(Object.entries(next)), sessions: new Map(sessions.map((s) => [s.id, s])) };
+}
+
+/** Refresh the registry with every repository on disk this pass: remote, first commit, record path. */
+function rememberRepos(claudeRoot: string, facts: IndexFile) {
+  const roots = new Set<string>();
+  for (const f of Object.values(facts)) {
+    for (const r of Object.keys(f.edits)) roots.add(r);
+    if (f.cwdRepo) roots.add(f.cwdRepo);
+  }
+  const now = new Date().toISOString();
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
+    upsert(registry, { root, remote: remoteOf(root), rootCommit: rootCommitOf(root), record: manifest?.root, project: manifest?.manifest.project, seen: now });
+  }
+  saveRegistry(claudeRoot, registry);
+}
+
+/** Identity and record location of one repository: from git while the folder exists, from the registry once it does not. */
+function describeRepo(root: string): Pick<Project, 'id' | 'kind' | 'name' | 'root' | 'remote' | 'recordRoot' | 'recordMissing' | 'gone'> {
+  const remote = remoteOf(root);
+  const gh = githubId(remote);
+  const rootCommit = rootCommitOf(root);
+  const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
+  const recordRoot = manifest?.root ?? registry.repos[keyOf(root)]?.record;
+  return {
+    id: gh ?? (rootCommit ? `commit:${rootCommit}` : root),
+    kind: gh ? 'github' : 'local',
+    name: gh ? gh.slice('github.com/'.length) : basename(root),
+    root,
+    remote,
+    recordRoot,
+    recordMissing: !!recordRoot && !existsSync(recordRoot),
+    gone: !existsSync(root),
+  };
+}
+
+/** A repository no session has touched yet, so a dossier can still describe its history. */
+export function bareProject(root: string): ProjectDetail {
+  return { ...describeRepo(root), sessions: [], edits: 0, calls: 0, failed: 0, firstTs: '', lastTs: '', live: false, sessionList: [], neighbours: [] };
 }
 
 /** Fold session facts into projects, GitHub repositories first, and the misc list. */
@@ -219,14 +285,11 @@ export function foldProjects(facts: Map<string, SessionFacts>, sessions: Map<str
   const byId = new Map<string, Project>();
   const misc: MiscSession[] = [];
   const place = (root: string, s: Session, f: SessionFacts, link: SessionLink) => {
-    const remote = remoteOf(root);
-    const gh = githubId(remote);
-    const id = gh ?? (rootCommitOf(root) ? `commit:${rootCommitOf(root)}` : root);
-    let p = byId.get(id);
+    const d = describeRepo(root);
+    let p = byId.get(d.id);
     if (!p) {
-      const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
-      p = { id, kind: gh ? 'github' : 'local', name: gh ? gh.slice('github.com/'.length) : basename(root), root, remote, sessions: [], edits: 0, calls: 0, failed: 0, firstTs: f.startTs, lastTs: f.endTs, live: false, recordRoot: manifest?.root };
-      byId.set(id, p);
+      p = { ...d, sessions: [], edits: 0, calls: 0, failed: 0, firstTs: f.startTs, lastTs: f.endTs, live: false };
+      byId.set(d.id, p);
     }
     p.sessions.push(link);
     p.edits += link.edits;

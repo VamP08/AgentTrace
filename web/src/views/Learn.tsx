@@ -168,7 +168,7 @@ export function Learn({ base, cwd }: Props) {
           const j = record.journal.find((x) => `j:${x.slug}` === pick);
           return j ? (
             <article className="doc">
-              <div className="doc-h"><span className="pill">{j.date}</span>{j.milestone && <span className="pill">{j.milestone}</span>}{j.commits.length > 0 && <span className="c">commits {j.commits.join(', ')}</span>}</div>
+              <div className="doc-h"><span className="pill">{j.date}</span>{j.milestone && <span className="pill">{j.milestone}</span>}{j.reconstructed && <span className="pill" title={j.source ? `written from ${j.source}` : 'written after the fact'}>reconstructed</span>}{j.commits.length > 0 && <span className="c">commits {j.commits.join(', ')}</span>}</div>
               <h2>{j.summary}</h2>
               <Markdown text={j.body} />
               {j.learning.length > 0 && <div className="doc-files"><span className="c">Lessons from this session</span>{j.learning.map((n) => <button key={n} className="chip" onClick={() => { setTab('learning'); setPick(n); }}>{n}</button>)}</div>}
@@ -217,6 +217,7 @@ function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry
       <div className="doc-h">
         <span className="pill">{entry.type}</span>
         <span className="pill">{entry.level}</span>
+        {entry.reconstructed && <span className="pill" title={entry.source ? `written from ${entry.source}` : 'written after the fact'}>reconstructed</span>}
         <span className="c">{minutes(entry)} min read · introduced {entry.date.slice(0, 10)}</span>
       </div>
       <h2>{entry.title}</h2>

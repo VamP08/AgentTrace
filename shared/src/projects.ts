@@ -35,8 +35,12 @@ export interface Project {
   firstTs: string;
   lastTs: string;
   live: boolean;
-  /** record folder from agenttrace.json at the root, when present */
+  /** record folder from agenttrace.json at the root, or from the registry once the folder is gone */
   recordRoot?: string;
+  /** the record folder is named but not on disk: moved, or not cloned on this machine */
+  recordMissing?: boolean;
+  /** the working copy is no longer on disk; identity and record path come from the registry */
+  gone: boolean;
 }
 
 /** A session that touched no repository, listed under the folder it ran in. */

@@ -4,18 +4,19 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { homedir } from 'node:os';
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
+import type { ClientMessage, Project, ProjectRecord, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
 import { archiveSession, archiveStats, livePaths } from './archive.js';
-import { codeWindow, readRecord } from './docs.js';
+import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
+import { buildDossier } from './dossier.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
 import { parseFile, type ParsedFile } from './parse.js';
 import { detectStack } from './stack.js';
-import { buildFacts, foldProjects, projectDetail } from './projects.js';
+import { bareProject, buildFacts, canon, foldProjects, projectDetail, repoOf } from './projects.js';
 import { Tailer, type TailBatch, type TailGone } from './tail.js';
 
 export const claudeRoot = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
@@ -50,6 +51,14 @@ async function history(file: string, id: string): Promise<ParsedFile> {
   return parsed;
 }
 
+/** The record is the repository's own: its manifest at the root, or the registry's memory of it once the folder is gone. Never guessed from a session. */
+function recordFor(p: Project): ProjectRecord | undefined {
+  const found = existsSync(join(p.root, 'agenttrace.json')) ? findManifest(p.root) : undefined;
+  if (found) return readRecordAt(found);
+  if (p.recordRoot && !p.recordMissing) return readRecordAt({ manifest: { contract: 1, project: p.name, record: p.recordRoot }, root: p.recordRoot, repoDir: p.root });
+  return undefined;
+}
+
 function text(res: ServerResponse, status: number, body: string) {
   res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
   res.end(body);
@@ -75,10 +84,11 @@ function setupStatus() {
     hookInstaller: join(repoRoot, 'hooks', 'install-settings.mjs'),
     snippet: [
       '# AgentTrace learning record',
-      'This project keeps a record for AgentTrace. `agenttrace.json` at the repo root names the folder.',
-      'Follow the `agenttrace` skill: write a learning entry when a library, pattern, algorithm, design',
-      'choice or piece of math enters the code; a decision entry when options were weighed; a journal',
-      'entry at the end of the session. Same turn as the code. Explain for a reader who does not program.',
+      'This project keeps a record for AgentTrace beside the documentation it already keeps. `agenttrace.json`',
+      'at the repo root names the record folder; nothing outside it is the record, and its own documents',
+      'stay as they are. Follow the `agenttrace` skill: write a learning entry when a library, pattern,',
+      'algorithm, design choice or piece of math enters the code; a decision entry when options were weighed;',
+      'a journal entry at the end of the session. Same turn as the code. Explain for a reader who does not program.',
     ].join('\n'),
     manifestExample: JSON.stringify({ contract: 1, project: 'YourProject', record: 'C:/path/to/your/notes/YourProject' }, null, 2),
   };
@@ -94,7 +104,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
     if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
       if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
       mkdirSync(join(skillTarget, '..'), { recursive: true });
-      copyFileSync(skillSource, skillTarget);
+      for (const name of ['SKILL.md', 'register.mjs']) copyFileSync(join(dirname(skillSource), name), join(dirname(skillTarget), name));
       return json(res, 200, setupStatus());
     }
     if (parts[1] === 'projects' && parts.length === 2) {
@@ -108,9 +118,10 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const detail = projectDetail(id, facts, sessions, index);
       if (!detail) return json(res, 404, { error: 'unknown project' });
       if (parts.length === 3) return json(res, 200, detail);
+      if (parts[3] === 'dossier') return text(res, 200, await buildDossier(detail, sessions, recordFor(detail)));
       if (parts[3] !== 'record') return json(res, 404, { error: 'not found' });
-      // The record is the repository's own: found from its root, never guessed from a session.
-      const record = readRecord(detail.root, []);
+      if (detail.recordMissing) return json(res, 200, { present: false, missing: detail.recordRoot });
+      const record = recordFor(detail);
       if (!record) return json(res, 200, { present: false });
       const file = url.searchParams.get('file');
       if (file) {
@@ -118,6 +129,17 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
         return w ? json(res, 200, w) : json(res, 404, { error: 'file not found inside the project' });
       }
       return json(res, 200, record);
+    }
+    // For the skill's backfill: the dossier of whatever repository a folder is in, sessions or not.
+    if (parts[1] === 'dossier' && parts.length === 2) {
+      const cwd = url.searchParams.get('cwd');
+      const root = cwd ? repoOf(cwd) : null;
+      if (!root) return json(res, 404, { error: 'not inside a git repository' });
+      const { facts, sessions } = await buildFacts(claudeRoot);
+      const index = foldProjects(facts, sessions);
+      const found = index.projects.find((x) => canon(x.root) === root);
+      const detail = (found && projectDetail(found.id, facts, sessions, index)) || bareProject(root);
+      return text(res, 200, await buildDossier(detail, sessions, recordFor(detail)));
     }
     if (parts[1] === 'sessions' && parts.length === 2) {
       const sessions = discoverSessions(claudeRoot);
