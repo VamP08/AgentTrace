@@ -336,8 +336,8 @@ button.chip:hover { background: var(--hover); color: var(--text); }
 .ctx-line .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-line .c { color: var(--text-3); font-size: 12px; text-align: right; }
 .bar { position: relative; height: 18px; background: var(--raised); border-radius: var(--r-s); overflow: hidden; }
-.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-right: 2px solid var(--accent); }
-.bar.out i { background: rgba(94, 196, 143, 0.16); border-right-color: var(--ok); }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); }
+.bar.out i { background: rgba(94, 196, 143, 0.16); }
 .bar b { position: absolute; right: 8px; top: 0; line-height: 18px; font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
 .ctx-detail { padding: 8px 12px 14px 56px; border-top: 1px solid var(--line); background: var(--panel); }
 .ctx-item { margin-top: 8px; border: 1px solid var(--line); border-radius: var(--r); }
@@ -385,7 +385,7 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .diagram svg { max-width: 100%; height: auto; }
 .quiz { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); margin-bottom: 10px; }
 .quiz .q { font-weight: 500; margin-bottom: 8px; }
-.quiz .a, .lesson-body .a { margin: 8px 0 0; padding: 10px 12px; border-left: 2px solid var(--accent); background: var(--accent-soft); border-radius: 0 var(--r) var(--r) 0; color: var(--text); }
+.quiz .a, .lesson-body .a { margin: 8px 0 0; padding: 10px 12px; background: var(--accent-soft); border-radius: var(--r); color: var(--text); }
 .lesson-end { display: flex; gap: 14px; align-items: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--line); }
 .check { display: inline-flex; gap: 8px; align-items: center; color: var(--text-2); }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
