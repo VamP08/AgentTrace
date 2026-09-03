@@ -248,10 +248,24 @@ pre.diff .add, pre.diff .del { color: var(--text); display: inline-block; width:
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   .side { display: none; }
-  .row, .row.tool { grid-template-columns: 0 56px minmax(0, 1fr); }
+  .head, .stage, .scroll, .now { min-width: 0; }
+  .head { padding: 12px 14px 0; }
+  .head .row2 { flex-wrap: wrap; }
+  .head .tools { margin-left: 0; flex-wrap: wrap; }
+  .seg { flex-wrap: wrap; }
+  .row, .row.tool { grid-template-columns: 56px minmax(0, 1fr); padding: 0 14px 0 8px; }
   .row > .time { display: none; }
+  .card .line { flex-wrap: wrap; }
+  .card .arg { flex: 1 1 100%; }
+  .chapter { padding: 6px 14px 6px 8px; }
+  .chapter .c:not(.state):not(.fail) { display: none; }
+  .now { margin: 12px 14px 8px; }
+  .stack { padding: 8px 14px; }
   .split { grid-template-columns: 1fr; }
   .files { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .ctx-table { padding: 0 8px 40px; }
+  .ctx-head, .ctx-line { grid-template-columns: 28px minmax(0, 1fr) 110px 90px; }
+  .ctx-head span:last-child, .ctx-line .c { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .dot.pulse { animation: none; }
