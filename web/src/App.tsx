@@ -5,10 +5,11 @@ import { initial, reduce } from './store';
 import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
 import { Agents } from './views/Agents';
+import { Learn } from './views/Learn';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
-const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }] as const;
+const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Learn' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -171,6 +172,7 @@ export function App() {
               <StackStrip events={s.events} />
               {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
+              {view === 'Learn' && <Learn sessionId={current.id} cwd={current.cwd} />}
               {view === 'Helpers' && (
                 <Agents
                   sessionId={current.id}

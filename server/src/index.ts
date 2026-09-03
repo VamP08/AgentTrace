@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, sessionFile } from './discover.js';
+import { readRecord } from './docs.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
 import { parseFile, type ParsedFile } from './parse.js';
 import { detectStack } from './stack.js';
@@ -70,6 +71,13 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const slug = SESSION_ID.test(id) ? slugFor(id) : undefined;
       if (!slug) return json(res, 404, { error: 'unknown session' });
       if (parts[3] === 'agents') return json(res, 200, discoverAgents(claudeRoot, slug, id));
+      if (parts[3] === 'record') {
+        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
+        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+        const touched = trackedFiles(parsed.events).map((f) => f.path);
+        const record = session?.cwd ? readRecord(session.cwd, touched) : undefined;
+        return record ? json(res, 200, record) : json(res, 404, { error: 'no agenttrace.json above the folder this session ran in' });
+      }
       if (parts[3] === 'events') {
         const agent = url.searchParams.get('agent');
         if (!agent) return json(res, 200, await history(slug, id));

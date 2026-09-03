@@ -42,6 +42,18 @@ export function Agents({ sessionId, events, agents, agentEvents, live, onLoadAge
   }, [events, agents]);
 
   const node = nodes.find((n) => n.info.agentId === picked);
+  // The brief is the first thing the helper was told: the Agent call's prompt when the main
+  // transcript has it, otherwise the first prompt in the helper's own transcript (workflows).
+  const briefOf = (n: Node): string | undefined => {
+    const fromCall = n.spawn ? String((n.spawn.input as any).prompt ?? '') : '';
+    if (fromCall) return fromCall;
+    const first = (agentEvents[n.info.agentId] ?? []).find((e) => e.kind === 'user');
+    return first && first.kind === 'user' ? first.text : undefined;
+  };
+  const stateOf = (n: Node): string => {
+    if (n.spawn) return n.running ? (live ? 'Working' : 'Cut off') : n.report?.isError ? 'Failed' : 'Reported';
+    return 'Ran in a workflow';
+  };
 
   useEffect(() => {
     if (!picked || agentEvents[picked]) return;
@@ -66,9 +78,9 @@ export function Agents({ sessionId, events, agents, agentEvents, live, onLoadAge
           </div>
           {nodes.map((n) => (
             <button key={n.info.agentId} className={`node ${picked === n.info.agentId ? 'sel' : ''}`} style={{ paddingLeft: 16 + n.info.spawnDepth * 14 }} onClick={() => setPicked(n.info.agentId)} aria-current={picked === n.info.agentId ? 'true' : undefined}>
-              <span className="p">{n.info.description || n.spawn?.input && (n.spawn.input as any).description || `agent-${n.info.agentId}`}</span>
+              <span className="p">{n.info.description || (n.spawn?.input as any)?.description || briefOf(n)?.split('\n')[0] || `helper ${n.info.agentId.slice(0, 6)}`}</span>
               <span className="c">{n.info.agentType}</span>
-              <span className={`c state ${n.running ? (live ? 'ok' : '') : ''}`}>{n.running ? (live ? 'Working' : 'Cut off') : n.report?.isError ? 'Failed' : 'Reported'}</span>
+              <span className={`c state ${n.running && live ? 'ok' : ''}`}>{stateOf(n)}</span>
             </button>
           ))}
         </div>
@@ -84,7 +96,7 @@ export function Agents({ sessionId, events, agents, agentEvents, live, onLoadAge
           <>
             <div className="brief">
               <div className="brief-h">Brief <span className="c">{node.info.agentType} · {node.info.spawnDepth === 1 ? 'asked by the main session' : `depth ${node.info.spawnDepth}`}</span></div>
-              <pre>{node.spawn ? String((node.spawn.input as any).prompt ?? '') : 'The spawning call was not found in the main transcript.'}</pre>
+              <pre>{briefOf(node) ?? 'Reading the brief…'}</pre>
             </div>
             {error && <div className="notice">{error}</div>}
             {!error && (
