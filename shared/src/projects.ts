@@ -1,51 +1,57 @@
-// A project is one git repository. Sessions are events; turns are the atom that attaches to a
-// project, because one sitting often works on two repositories and neither should lose the work.
+// A project is one GitHub repository. Sessions attach to repositories: a session belongs to every
+// repository it edited files in, or, when it edited nothing, to the repository it ran inside.
+// A session that touched no repository is miscellaneous and lives outside the main list.
 
-export interface TurnRef {
+export interface SessionLink {
   sessionId: string;
-  /** 1-based turn number inside its session */
-  n: number;
-  /** the first line of the prompt that opened the turn */
-  prompt: string;
-  startTs: string;
-  endTs: string;
-  calls: number;
-  failed: number;
-  /** edits per repository root, this turn only */
-  edits: Record<string, number>;
-  /** repository roots this turn also touched, besides the one whose list it appears in */
-  also: string[];
+  /** files written or edited inside this repository during the session */
+  edits: number;
+  /** true when this repository received the most edits of any the session touched */
+  primary: boolean;
+  /** true when the session ran inside this repository but edited nothing there */
+  byCwdOnly: boolean;
 }
 
 /**
- * repo: a git repository, the real unit of work.
- * folder: a plain folder that was edited, no repository above it.
- * scratch: a per-session scratchpad or temp folder.
- * config: the coding tool's own folders, such as plans and memory.
+ * github: has a github.com remote, the real unit of work.
+ * local: a git repository with no GitHub remote, not published yet.
  */
-export type ProjectKind = 'repo' | 'folder' | 'scratch' | 'config';
+export type ProjectKind = 'github' | 'local';
 
 export interface Project {
-  /** absolute path of the repository root, or of the folder when it is not a repository */
-  root: string;
-  name: string;
+  /** stable id: "github.com/owner/repo" for GitHub, the canonical root path otherwise */
+  id: string;
   kind: ProjectKind;
-  /** first remote URL, when the repository has one */
+  /** owner/repo for GitHub, the folder name otherwise */
+  name: string;
+  /** absolute path of the working copy */
+  root: string;
   remote?: string;
-  turns: number;
+  sessions: SessionLink[];
+  /** files written or edited across all sessions */
+  edits: number;
   calls: number;
   failed: number;
-  sessions: string[];
   firstTs: string;
   lastTs: string;
-  /** true while any of its sessions is live */
   live: boolean;
   /** record folder from agenttrace.json at the root, when present */
   recordRoot?: string;
 }
 
+/** A session that touched no repository, listed under the folder it ran in. */
+export interface MiscSession {
+  sessionId: string;
+  folder: string;
+}
+
+export interface ProjectIndex {
+  projects: Project[];
+  misc: MiscSession[];
+}
+
 export interface ProjectDetail extends Project {
-  turnList: TurnRef[];
-  /** sessions that contributed, newest first, with how many turns each gave */
-  sessionList: { id: string; title: string; turns: number; updatedAt: string; live: boolean }[];
+  sessionList: { id: string; title: string; edits: number; primary: boolean; byCwdOnly: boolean; calls: number; failed: number; startedAt: string; updatedAt: string; live: boolean }[];
+  /** other repositories its sessions also worked in, with how many of its sessions did */
+  neighbours: { id: string; name: string; sessions: number }[];
 }

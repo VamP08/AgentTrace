@@ -1,34 +1,50 @@
-// Build the project index: one entry per repository, made of the turns that edited it.
-// A turn belongs to every repository it edited. A turn writing into a record folder such as
-// docs/<Project>/ counts as <Project>, because those notes are that project's own record.
+// Build the project index: one entry per GitHub repository, made of the sessions that worked in
+// it. A session belongs to every repository it edited files in; a session that edited nothing
+// belongs to the repository its working directory was in; the rest are miscellaneous.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
-import type { Event, Project, ProjectDetail, ProjectKind, Session, TurnRef } from '@agenttrace/shared';
+import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session, SessionLink } from '@agenttrace/shared';
 import { discoverSessions, sessionFile } from './discover.js';
 import { findManifest } from './docs.js';
 import { parseFile } from './parse.js';
 
-interface SessionIndex {
-  /** file size and mtime the index was built from, so a changed transcript re-indexes */
+/** What one session's transcript says about where it worked. Cached per session. */
+interface SessionFacts {
   bytes: number;
   updatedAt: string;
-  turns: TurnRef[];
+  /** canonical repository root -> edits inside it */
+  edits: Record<string, number>;
+  /** repository root of the folder the session ran in, if any */
+  cwdRepo: string | null;
+  calls: number;
+  failed: number;
+  startTs: string;
+  endTs: string;
 }
 
-type IndexFile = Record<string, SessionIndex>;
+type IndexFile = Record<string, SessionFacts>;
 
 const repoCache = new Map<string, string | null>();
-const recordOwner = new Map<string, string | null>();
+const remoteCache = new Map<string, string | undefined>();
+const canonical = new Map<string, string>();
+
+/** Windows paths differ only by case for the same folder; one spelling has to win or a project splits in two. */
+export function canon(p: string): string {
+  const key = resolve(p).replace(/[\\/]+$/, '').toLowerCase();
+  const seen = canonical.get(key);
+  if (seen) return seen;
+  const chosen = resolve(p).replace(/[\\/]+$/, '');
+  canonical.set(key, chosen);
+  return chosen;
+}
 
 /**
- * The git repository a file belongs to, or null. A folder that no longer exists, because it was
- * renamed or deleted since the session ran, is answered from its nearest surviving ancestor, so
- * work in a folder that has since moved still lands on the repository it was part of.
- * Cached per folder, since the same folder is asked about thousands of times.
+ * The git repository a folder belongs to, or null. A folder that no longer exists is answered
+ * from its nearest surviving ancestor, so work in a folder renamed since still lands on its
+ * repository. Cached per folder.
  */
-function repoOf(dir: string): string | null {
+export function repoOf(dir: string): string | null {
   const hit = repoCache.get(dir);
   if (hit !== undefined) return hit;
   let probe = dir;
@@ -45,106 +61,66 @@ function repoOf(dir: string): string | null {
       root = null;
     }
   }
-  repoCache.set(dir, root);
-  return root;
-}
-
-/** Windows paths differ only by case for the same folder; one spelling has to win or a project splits in two. */
-const canonical = new Map<string, string>();
-function canon(p: string): string {
-  const key = resolve(p).replace(/[\/]+$/, '').toLowerCase();
-  const seen = canonical.get(key);
-  if (seen) return seen;
-  const chosen = resolve(p).replace(/[\/]+$/, '');
-  canonical.set(key, chosen);
-  return chosen;
-}
-
-/**
- * If a path sits inside some project's record folder, that project owns it.
- * The record folder is found by reading agenttrace.json files: a record root of
- * `E:/…/docs/AgentTrace` means anything under it belongs to the AgentTrace repository.
- */
-function recordOwnerOf(dir: string, manifests: { repoDir: string; root: string }[]): string | null {
-  const hit = recordOwner.get(dir);
-  if (hit !== undefined) return hit;
-  let owner: string | null = null;
-  const norm = resolve(dir).toLowerCase();
-  for (const m of manifests) {
-    const r = resolve(m.root).toLowerCase();
-    if (norm === r || norm.startsWith(r + '\\') || norm.startsWith(r + '/')) {
-      owner = repoOf(m.repoDir) ?? m.repoDir;
-      break;
-    }
-  }
-  recordOwner.set(dir, owner);
-  return owner;
-}
-
-/** Files a turn wrote, from its Write and Edit calls, made absolute against the session folder. */
-function editedPaths(events: Event[], cwd: string): string[] {
-  const out: string[] = [];
-  for (const e of events) {
-    if (e.kind !== 'tool_call') continue;
-    if (e.name !== 'Write' && e.name !== 'Edit' && e.name !== 'NotebookEdit') continue;
-    const input = (e.input ?? {}) as Record<string, unknown>;
-    const p = input.file_path ?? input.notebook_path;
-    if (typeof p === 'string' && p) out.push(resolve(cwd, p));
-  }
+  const out = root ? canon(root) : null;
+  repoCache.set(dir, out);
   return out;
 }
 
-/**
- * A turn's label. Most turns open with something a person typed. Some open with a system
- * notification wrapped in a tag, and showing the tag teaches nobody anything, so those say
- * what actually happened instead.
- */
-export function label(text: string): string {
-  const first = text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? '';
-  if (!first.startsWith('<')) return first.slice(0, 200);
-  const tag = /^<([a-z-]+)/i.exec(first)?.[1] ?? '';
-  const said: Record<string, string> = {
-    'task-notification': 'A background task finished',
-    'local-command-caveat': 'A local command was run',
-    'system-reminder': 'A reminder arrived',
-    'command-name': 'A command was invoked',
-  };
-  const rest = text.replace(/<[^>]*>/g, ' ').split('\n').map((l) => l.trim()).find((l) => l.length > 12);
-  return said[tag] ?? (rest ? rest.slice(0, 200) : 'A system message arrived');
+function remoteOf(root: string): string | undefined {
+  if (remoteCache.has(root)) return remoteCache.get(root);
+  let url: string | undefined;
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || undefined;
+  } catch {
+    url = undefined;
+  }
+  remoteCache.set(root, url);
+  return url;
 }
 
-/** Split one session's events into turns and attach each turn to the repositories it edited. */
-export function turnsOf(events: Event[], session: Session, manifests: { repoDir: string; root: string }[]): TurnRef[] {
-  const turns: TurnRef[] = [];
-  let cur: { ref: TurnRef; events: Event[] } | undefined;
-  const close = () => {
-    if (!cur) return;
-    const counts: Record<string, number> = {};
-    for (const p of editedPaths(cur.events, session.cwd)) {
-      const dir = dirname(p);
-      const owner = canon(recordOwnerOf(dir, manifests) ?? repoOf(dir) ?? dir);
-      counts[owner] = (counts[owner] ?? 0) + 1;
-    }
-    cur.ref.edits = counts;
-    turns.push(cur.ref);
-  };
-  for (const e of events) {
-    if (e.kind === 'user') {
-      close();
-      cur = {
-        ref: { sessionId: session.id, n: turns.length + 1, prompt: label(e.text), startTs: e.ts, endTs: e.ts, calls: 0, failed: 0, edits: {}, also: [] },
-        events: [],
-      };
-      continue;
-    }
-    if (!cur) continue;
-    cur.events.push(e);
-    if (e.ts) cur.ref.endTs = e.ts;
-    if (e.kind === 'tool_call') cur.ref.calls++;
-    if (e.kind === 'tool_result' && e.isError) cur.ref.failed++;
+/** "github.com/owner/repo" from any of the ways a GitHub remote is written, or undefined for other hosts. */
+export function githubId(remote?: string): string | undefined {
+  if (!remote) return undefined;
+  const m = /github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(remote);
+  return m ? `github.com/${m[1]}/${m[2]}`.toLowerCase() : undefined;
+}
+
+/**
+ * If a path sits inside some project's record folder, that project's repository owns it. A record
+ * root of `E:/…/docs/AgentTrace` means anything under it is AgentTrace's own notes.
+ */
+function recordOwnerOf(dir: string, manifests: { repoDir: string; root: string }[]): string | null {
+  const norm = resolve(dir).toLowerCase();
+  for (const m of manifests) {
+    const r = resolve(m.root).toLowerCase();
+    if (norm === r || norm.startsWith(r + '\\') || norm.startsWith(r + '/')) return repoOf(m.repoDir) ?? canon(m.repoDir);
   }
-  close();
-  return turns;
+  return null;
+}
+
+/** Everything one transcript says about where it worked. Relative paths resolve against the line's own cwd. */
+export function sessionFacts(events: Event[], session: Session, manifests: { repoDir: string; root: string }[]): SessionFacts {
+  const edits: Record<string, number> = {};
+  let calls = 0, failed = 0;
+  let startTs = '', endTs = '';
+  const results = new Map<string, boolean>();
+  for (const e of events) if (e.kind === 'tool_result') results.set(e.toolUseId, e.isError);
+  for (const e of events) {
+    if (e.ts) { if (!startTs) startTs = e.ts; endTs = e.ts; }
+    if (e.kind !== 'tool_call') continue;
+    calls++;
+    if (results.get(e.toolUseId)) failed++;
+    if (e.name !== 'Write' && e.name !== 'Edit' && e.name !== 'NotebookEdit') continue;
+    const input = (e.input ?? {}) as Record<string, unknown>;
+    const p = input.file_path ?? input.notebook_path;
+    if (typeof p !== 'string' || !p) continue;
+    const abs = resolve(e.cwd ?? session.cwd, p);
+    const dir = dirname(abs);
+    const owner = recordOwnerOf(dir, manifests) ?? repoOf(dir);
+    if (!owner) continue; // edits outside any repository belong to no project
+    edits[owner] = (edits[owner] ?? 0) + 1;
+  }
+  return { bytes: session.bytes, updatedAt: session.updatedAt, edits, cwdRepo: session.cwd ? repoOf(session.cwd) : null, calls, failed, startTs: startTs || session.startedAt, endTs: endTs || session.updatedAt };
 }
 
 function indexPath(claudeRoot: string): string {
@@ -153,29 +129,27 @@ function indexPath(claudeRoot: string): string {
 
 function loadIndex(claudeRoot: string): IndexFile {
   try {
-    return JSON.parse(readFileSync(indexPath(claudeRoot), 'utf8'));
+    const raw = JSON.parse(readFileSync(indexPath(claudeRoot), 'utf8'));
+    return raw && raw.version === 2 ? raw.sessions : {};
   } catch {
     return {};
   }
 }
 
-function saveIndex(claudeRoot: string, idx: IndexFile) {
+function saveIndex(claudeRoot: string, sessions: IndexFile) {
   try {
     mkdirSync(dirname(indexPath(claudeRoot)), { recursive: true });
-    writeFileSync(indexPath(claudeRoot), JSON.stringify(idx));
+    writeFileSync(indexPath(claudeRoot), JSON.stringify({ version: 2, sessions }));
   } catch {
     // the index is a cache; failing to write it only costs time next run
   }
 }
 
-/** Every agenttrace.json reachable from the sessions' folders, so record folders can be attributed. */
+/** Every agenttrace.json reachable from the sessions' folders and one level below, so record folders can be attributed. */
 function manifestsFor(sessions: Session[]): { repoDir: string; root: string }[] {
   const seen = new Map<string, { repoDir: string; root: string }>();
-  const dirs = new Set<string>();
-  for (const s of sessions) if (s.cwd) dirs.add(s.cwd);
-  for (const dir of dirs) {
+  for (const dir of new Set(sessions.map((s) => s.cwd).filter(Boolean))) {
     if (!existsSync(dir)) continue;
-    // one level down as well: a parent folder often holds several project repositories
     const found = findManifest(dir);
     if (found) seen.set(found.root, { repoDir: found.repoDir, root: found.root });
     try {
@@ -192,99 +166,81 @@ function manifestsFor(sessions: Session[]): { repoDir: string; root: string }[] 
   return [...seen.values()];
 }
 
-/** Index every session's turns, reusing cached entries whose transcript has not changed. */
-export async function buildIndex(claudeRoot: string): Promise<{ turns: TurnRef[]; sessions: Map<string, Session> }> {
+/** Facts for every session, reusing cached entries whose transcript has not changed. */
+export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
   const sessions = discoverSessions(claudeRoot);
   const manifests = manifestsFor(sessions);
   const cached = loadIndex(claudeRoot);
   const next: IndexFile = {};
-  const all: TurnRef[] = [];
   for (const s of sessions) {
     const hit = cached[s.id];
     if (hit && hit.bytes === s.bytes && hit.updatedAt === s.updatedAt) {
       next[s.id] = hit;
-      all.push(...hit.turns);
       continue;
     }
     const parsed = await parseFile(sessionFile(claudeRoot, s.projectSlug, s.id), { sessionId: s.id });
-    const turns = turnsOf(parsed.events, s, manifests);
-    next[s.id] = { bytes: s.bytes, updatedAt: s.updatedAt, turns };
-    all.push(...turns);
+    next[s.id] = sessionFacts(parsed.events, s, manifests);
   }
   saveIndex(claudeRoot, next);
-  return { turns: all, sessions: new Map(sessions.map((s) => [s.id, s])) };
+  return { facts: new Map(Object.entries(next)), sessions: new Map(sessions.map((s) => [s.id, s])) };
 }
 
-/** What sort of place this is, so the sidebar can put real repositories first and fold the rest away. */
-function kindOf(root: string, claudeRoot: string): ProjectKind {
-  const low = resolve(root).toLowerCase();
-  const temp = resolve(tmpdir()).toLowerCase();
-  const cfg = resolve(claudeRoot).toLowerCase();
-  if (low.startsWith(temp)) return 'scratch';
-  if (low.startsWith(cfg) || low.startsWith(resolve(homedir(), '.claude').toLowerCase())) return 'config';
-  const r = repoOf(root);
-  return r && canon(r) === canon(root) ? 'repo' : 'folder';
-}
-
-function remoteOf(root: string): string | undefined {
-  try {
-    return execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Fold turns into projects. A turn with edits in two repositories counts in both, marked. */
-export function foldProjects(turns: TurnRef[], sessions: Map<string, Session>, claudeRoot = ''): Project[] {
-  const byRoot = new Map<string, Project & { sessionSet: Set<string> }>();
-  for (const t of turns) {
-    const roots = Object.keys(t.edits);
-    if (roots.length === 0) continue; // a turn that wrote nothing belongs to no project
-    for (const root of roots) {
-      let p = byRoot.get(root);
-      if (!p) {
-        const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
-        p = {
-          root,
-          name: basename(root),
-          kind: kindOf(root, claudeRoot),
-          remote: remoteOf(root),
-          turns: 0, calls: 0, failed: 0, sessions: [],
-          firstTs: t.startTs, lastTs: t.endTs, live: false,
-          recordRoot: manifest?.root,
-          sessionSet: new Set<string>(),
-        };
-        byRoot.set(root, p);
-      }
-      p.turns++;
-      p.calls += t.calls;
-      p.failed += t.failed;
-      p.sessionSet.add(t.sessionId);
-      if (t.startTs && t.startTs < p.firstTs) p.firstTs = t.startTs;
-      if (t.endTs && t.endTs > p.lastTs) p.lastTs = t.endTs;
-      if (sessions.get(t.sessionId)?.live) p.live = true;
+/** Fold session facts into projects, GitHub repositories first, and the misc list. */
+export function foldProjects(facts: Map<string, SessionFacts>, sessions: Map<string, Session>): ProjectIndex {
+  const byId = new Map<string, Project>();
+  const misc: MiscSession[] = [];
+  const place = (root: string, s: Session, f: SessionFacts, link: SessionLink) => {
+    const remote = remoteOf(root);
+    const gh = githubId(remote);
+    const id = gh ?? root;
+    let p = byId.get(id);
+    if (!p) {
+      const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
+      p = { id, kind: gh ? 'github' : 'local', name: gh ? gh.slice('github.com/'.length) : basename(root), root, remote, sessions: [], edits: 0, calls: 0, failed: 0, firstTs: f.startTs, lastTs: f.endTs, live: false, recordRoot: manifest?.root };
+      byId.set(id, p);
+    }
+    p.sessions.push(link);
+    p.edits += link.edits;
+    p.calls += f.calls;
+    p.failed += f.failed;
+    if (f.startTs && f.startTs < p.firstTs) p.firstTs = f.startTs;
+    if (f.endTs && f.endTs > p.lastTs) p.lastTs = f.endTs;
+    if (s.live) p.live = true;
+  };
+  for (const [id, f] of facts) {
+    const s = sessions.get(id);
+    if (!s) continue;
+    const roots = Object.entries(f.edits).sort((a, b) => b[1] - a[1]);
+    if (roots.length > 0) {
+      roots.forEach(([root, n], i) => place(root, s, f, { sessionId: id, edits: n, primary: i === 0, byCwdOnly: false }));
+    } else if (f.cwdRepo) {
+      place(f.cwdRepo, s, f, { sessionId: id, edits: 0, primary: true, byCwdOnly: true });
+    } else {
+      misc.push({ sessionId: id, folder: s.cwd ? basename(s.cwd) || s.cwd : s.projectSlug });
     }
   }
-  const order: Record<ProjectKind, number> = { repo: 0, folder: 1, config: 2, scratch: 3 };
-  return [...byRoot.values()]
-    .map(({ sessionSet, ...p }) => ({ ...p, sessions: [...sessionSet] }))
-    .sort((a, b) => order[a.kind] - order[b.kind] || (a.lastTs < b.lastTs ? 1 : -1));
+  const projects = [...byId.values()].sort((a, b) => (a.kind === b.kind ? (a.lastTs < b.lastTs ? 1 : -1) : a.kind === 'github' ? -1 : 1));
+  for (const p of projects) p.sessions.sort((a, b) => Number(b.primary) - Number(a.primary) || b.edits - a.edits);
+  return { projects, misc };
 }
 
-export function projectDetail(root: string, turns: TurnRef[], sessions: Map<string, Session>, list: Project[]): ProjectDetail | undefined {
-  const p = list.find((x) => x.root === root);
+export function projectDetail(id: string, facts: Map<string, SessionFacts>, sessions: Map<string, Session>, index: ProjectIndex): ProjectDetail | undefined {
+  const p = index.projects.find((x) => x.id === id);
   if (!p) return undefined;
-  const mine = turns
-    .filter((t) => t.edits[root])
-    .map((t) => ({ ...t, also: Object.keys(t.edits).filter((r) => r !== root) }))
-    .sort((a, b) => (a.startTs < b.startTs ? 1 : -1));
-  const perSession = new Map<string, number>();
-  for (const t of mine) perSession.set(t.sessionId, (perSession.get(t.sessionId) ?? 0) + 1);
-  const sessionList = [...perSession.entries()]
-    .map(([id, n]) => {
-      const s = sessions.get(id);
-      return { id, title: s?.title ?? id, turns: n, updatedAt: s?.updatedAt ?? '', live: !!s?.live };
+  const sessionList = p.sessions
+    .map((l) => {
+      const s = sessions.get(l.sessionId);
+      const f = facts.get(l.sessionId);
+      return { id: l.sessionId, title: s?.title ?? l.sessionId, edits: l.edits, primary: l.primary, byCwdOnly: l.byCwdOnly, calls: f?.calls ?? 0, failed: f?.failed ?? 0, startedAt: s?.startedAt ?? '', updatedAt: s?.updatedAt ?? '', live: !!s?.live };
     })
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  return { ...p, turnList: mine, sessionList };
+  const counts = new Map<string, number>();
+  for (const l of p.sessions) {
+    for (const other of index.projects) {
+      if (other.id === p.id) continue;
+      if (other.sessions.some((x) => x.sessionId === l.sessionId)) counts.set(other.id, (counts.get(other.id) ?? 0) + 1);
+    }
+  }
+  const neighbours = [...counts.entries()].map(([oid, n]) => ({ id: oid, name: index.projects.find((x) => x.id === oid)?.name ?? oid, sessions: n })).sort((a, b) => b.sessions - a.sessions);
+  return { ...p, sessionList, neighbours };
 }

@@ -96,7 +96,7 @@ export function parseRecord(rec: Block, ctx: ParseContext): Event[] {
         if (!b) return;
         if (b.type === 'text' && b.text) out.push({ ...base, kind: 'assistant_text', id: `${id}:${i}`, text: b.text });
         if (b.type === 'tool_use') {
-          out.push({ ...base, kind: 'tool_call', id: `${id}:${i}`, toolUseId: String(b.id ?? ''), name: String(b.name ?? ''), input: b.input });
+          out.push({ ...base, kind: 'tool_call', id: `${id}:${i}`, toolUseId: String(b.id ?? ''), name: String(b.name ?? ''), input: b.input, cwd: typeof rec.cwd === 'string' ? rec.cwd : undefined });
           if (b.name === 'Agent' && b.input) {
             out.push({
               ...base,

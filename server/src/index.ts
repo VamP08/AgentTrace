@@ -14,7 +14,7 @@ import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
 import { parseFile, type ParsedFile } from './parse.js';
 import { detectStack } from './stack.js';
-import { buildIndex, foldProjects, projectDetail } from './projects.js';
+import { buildFacts, foldProjects, projectDetail } from './projects.js';
 import { Tailer, type TailBatch, type TailGone } from './tail.js';
 
 export const claudeRoot = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
@@ -103,13 +103,13 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(res, 200, setupStatus());
     }
     if (parts[1] === 'projects' && parts.length === 2) {
-      const { turns, sessions } = await buildIndex(claudeRoot);
-      return json(res, 200, foldProjects(turns, sessions, claudeRoot));
+      const { facts, sessions } = await buildFacts(claudeRoot);
+      return json(res, 200, foldProjects(facts, sessions));
     }
-    if (parts[1] === 'projects' && parts.length === 3) {
-      const root = Buffer.from(parts[2], 'base64url').toString('utf8');
-      const { turns, sessions } = await buildIndex(claudeRoot);
-      const detail = projectDetail(root, turns, sessions, foldProjects(turns, sessions, claudeRoot));
+    if (parts[1] === 'projects' && parts.length >= 3) {
+      const id = decodeURIComponent(parts.slice(2).join('/'));
+      const { facts, sessions } = await buildFacts(claudeRoot);
+      const detail = projectDetail(id, facts, sessions, foldProjects(facts, sessions));
       return detail ? json(res, 200, detail) : json(res, 404, { error: 'unknown project' });
     }
     if (parts[1] === 'sessions' && parts.length === 2) {

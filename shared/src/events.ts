@@ -29,6 +29,8 @@ export interface ToolCallEvent extends EventBase {
   toolUseId: string;
   name: string;
   input: unknown;
+  /** the working directory when the call was made; relative file paths in the input resolve against it */
+  cwd?: string;
 }
 
 export interface ToolResultEvent extends EventBase {
