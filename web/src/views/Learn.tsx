@@ -6,7 +6,9 @@ import type { CodeWindow, LearningEntry, ProjectRecord } from '@agenttrace/share
 import { Markdown, Code } from '../components/Markdown';
 
 interface Props {
-  sessionId: string;
+  /** the record endpoint for this repository, e.g. /api/projects/<id>/record */
+  base: string;
+  /** the repository's working copy, for the empty state */
   cwd: string;
 }
 
@@ -24,7 +26,7 @@ function loadRead(project: string): Set<string> {
   }
 }
 
-export function Learn({ sessionId, cwd }: Props) {
+export function Learn({ base, cwd }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
@@ -33,7 +35,7 @@ export function Learn({ sessionId, cwd }: Props) {
 
   useEffect(() => {
     setRecord(undefined);
-    fetch(`/api/sessions/${sessionId}/record`)
+    fetch(base)
       .then((r) => (r.ok ? r.json() : null))
       .then((r: (ProjectRecord & { present?: boolean }) | null) => {
         const rec = r && r.present === false ? null : r;
@@ -41,7 +43,7 @@ export function Learn({ sessionId, cwd }: Props) {
         if (rec) setRead(loadRead(rec.project));
       })
       .catch(() => setRecord(null));
-  }, [sessionId]);
+  }, [base]);
 
   const ordered = useMemo(() => (record ? orderByPrerequisites(record.learning) : []), [record]);
   const entries = useMemo(() => ordered.filter((l) => type === 'all' || l.type === type), [ordered, type]);
@@ -73,9 +75,9 @@ export function Learn({ sessionId, cwd }: Props) {
     return (
       <div className="empty">
         <h3>No record for this project yet.</h3>
-        The Learn view reads a folder of lessons the coding tool keeps while it builds. No <code>agenttrace.json</code> was
-        found in the folder this session ran in, <code>{cwd}</code>, nor in the folders of the files it edited. Open Setup in
-        the sidebar for the two files that turn it on for a project.
+        The Learn view reads a folder of lessons the coding tool keeps while it builds this repository. No
+        <code> agenttrace.json </code> was found at <code>{cwd}</code>. Open Setup in the sidebar for the two files that turn
+        it on; from the next session, lessons appear here.
       </div>
     );
   }
@@ -150,7 +152,7 @@ export function Learn({ sessionId, cwd }: Props) {
           </div>
         )}
         {entry && pick && !pick.includes(':') && (
-          <Lesson key={entry.slug} entry={entry} record={record} sessionId={sessionId} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={setPick} onNext={goNext} />
+          <Lesson key={entry.slug} entry={entry} record={record} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={setPick} onNext={goNext} />
         )}
         {pick?.startsWith('d:') && (() => {
           const d = record.decisions.find((x) => `d:${x.slug}` === pick);
@@ -190,7 +192,7 @@ export function Learn({ sessionId, cwd }: Props) {
   );
 }
 
-function Lesson({ entry, record, sessionId, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; sessionId: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
+function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; base: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
   const [code, setCode] = useState<CodeWindow | null | undefined>();
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [hint, setHint] = useState(false);
@@ -203,8 +205,8 @@ function Lesson({ entry, record, sessionId, isRead, onRead, onPick, onNext }: { 
     const file = entry.files[0];
     if (!file) return void setCode(null);
     const q = new URLSearchParams({ file, ...(entry.anchor ? { anchor: entry.anchor } : {}) });
-    fetch(`/api/sessions/${sessionId}/record?${q}`).then((r) => (r.ok ? r.json() : null)).then(setCode).catch(() => setCode(null));
-  }, [entry, sessionId]);
+    fetch(`${base}?${q}`).then((r) => (r.ok ? r.json() : null)).then(setCode).catch(() => setCode(null));
+  }, [entry, base]);
 
   const sections = useMemo(() => splitSections(entry.body), [entry.body]);
   const missing = (entry.prerequisites ?? []).filter((p) => !record.learning.some((l) => l.slug === p));

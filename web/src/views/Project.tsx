@@ -2,6 +2,9 @@
 // wherever they were started, so a repository's story is in one place.
 import { useEffect, useState } from 'react';
 import type { ProjectDetail } from '@agenttrace/shared';
+import { Learn } from './Learn';
+
+type Tab = 'Overview' | 'Learn';
 
 interface Props {
   id: string;
@@ -11,9 +14,11 @@ interface Props {
 
 export function Project({ id, onOpenSession, onOpenProject }: Props) {
   const [p, setP] = useState<ProjectDetail | null | undefined>();
+  const [tab, setTab] = useState<Tab>('Overview');
 
   useEffect(() => {
     setP(undefined);
+    setTab('Overview');
     fetch(`/api/projects/${encodeURIComponent(id)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then(setP)
@@ -41,10 +46,18 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
           <span>Tool calls <b>{p.calls}</b></span>
           {p.failed > 0 && <span>Failed <b>{p.failed}</b></span>}
         </div>
-        <div className="row2" />
+        <div className="row2">
+          <div className="seg" role="tablist">
+            {(['Overview', 'Learn'] as Tab[]).map((t) => (
+              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>
+            ))}
+          </div>
+        </div>
       </header>
 
       <div className="stage">
+        {tab === 'Learn' && <Learn base={`/api/projects/${encodeURIComponent(p.id)}/record`} cwd={p.root} />}
+        {tab === 'Overview' && (
         <div className="scroll">
           <section className="now idle">
             <div className="now-h">What this project is</div>
@@ -91,15 +104,17 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
           {p.recordRoot ? (
             <section className="now idle">
               <div className="now-h">Record</div>
-              <p className="now-p">Lessons for this project are kept in <code>{p.recordRoot}</code>. Open any of its sessions and choose Learn.</p>
+              <p className="now-p">Lessons for this repository are kept in <code>{p.recordRoot}</code>.</p>
+              <div className="doc-files"><button className="btn primary" onClick={() => setTab('Learn')}>Open the lessons</button></div>
             </section>
           ) : (
             <section className="now idle">
               <div className="now-h">No record yet</div>
-              <p className="now-p">This project keeps no lessons. Open Setup in the sidebar for the two files that turn it on, then the next session writes as it builds.</p>
+              <p className="now-p">This repository keeps no lessons. Open Setup in the sidebar for the two files that turn it on, then the next session writes as it builds.</p>
             </section>
           )}
         </div>
+        )}
       </div>
     </>
   );

@@ -5,7 +5,6 @@ import { initial, reduce } from './store';
 import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
 import { Agents } from './views/Agents';
-import { Learn } from './views/Learn';
 import { Context } from './views/Context';
 import { Setup } from './views/Setup';
 import { Project } from './views/Project';
@@ -13,7 +12,7 @@ import type { Project as ProjectRow, ProjectIndex } from '@agenttrace/shared';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
-const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }, { id: 'Learn' }] as const;
+const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -241,7 +240,6 @@ export function App() {
               {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
               {view === 'Context' && <Context events={s.events} hooks={hooks} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
-              {view === 'Learn' && <Learn sessionId={current.id} cwd={current.cwd} />}
               {view === 'Helpers' && (
                 <Agents
                   sessionId={current.id}

@@ -106,11 +106,23 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const { facts, sessions } = await buildFacts(claudeRoot);
       return json(res, 200, foldProjects(facts, sessions));
     }
-    if (parts[1] === 'projects' && parts.length >= 3) {
-      const id = decodeURIComponent(parts.slice(2).join('/'));
+    if (parts[1] === 'projects' && (parts.length === 3 || parts.length === 4)) {
+      const id = decodeURIComponent(parts[2]);
       const { facts, sessions } = await buildFacts(claudeRoot);
-      const detail = projectDetail(id, facts, sessions, foldProjects(facts, sessions));
-      return detail ? json(res, 200, detail) : json(res, 404, { error: 'unknown project' });
+      const index = foldProjects(facts, sessions);
+      const detail = projectDetail(id, facts, sessions, index);
+      if (!detail) return json(res, 404, { error: 'unknown project' });
+      if (parts.length === 3) return json(res, 200, detail);
+      if (parts[3] !== 'record') return json(res, 404, { error: 'not found' });
+      // The record is the repository's own: found from its root, never guessed from a session.
+      const record = readRecord(detail.root, []);
+      if (!record) return json(res, 200, { present: false });
+      const file = url.searchParams.get('file');
+      if (file) {
+        const w = codeWindow(record.repoDir, file, url.searchParams.get('anchor') ?? undefined);
+        return w ? json(res, 200, w) : json(res, 404, { error: 'file not found inside the project' });
+      }
+      return json(res, 200, record);
     }
     if (parts[1] === 'sessions' && parts.length === 2) {
       const sessions = discoverSessions(claudeRoot);
