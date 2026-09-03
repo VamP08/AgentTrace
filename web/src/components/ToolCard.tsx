@@ -7,7 +7,7 @@ type Call = Extract<Event, { kind: 'tool_call' }>;
 const LIMIT = 3000;
 
 /** One tool call. The explanation shows by itself the first time a tool appears in the session; after that it is one click away. */
-export function ToolCard({ call, result, agent, first }: { call: Call; result?: ToolResultEvent; agent?: AgentInfo; first: boolean }) {
+export function ToolCard({ call, result, agent, first, durationMs }: { call: Call; result?: ToolResultEvent; agent?: AgentInfo; first: boolean; durationMs?: number }) {
   const [open, setOpen] = useState(false);
   const [why, setWhy] = useState(first);
   const [full, setFull] = useState(false);
@@ -21,6 +21,7 @@ export function ToolCard({ call, result, agent, first }: { call: Call; result?: 
       <div className="line">
         <span className="name">{call.name}</span>
         <span className="arg" title={headline(call.name, input)}>{headline(call.name, input)}</span>
+        {durationMs !== undefined && <span className="dur" title="Wall time, from the hook log">{durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)} s` : `${durationMs} ms`}</span>}
         <span className={`st ${state}`}>{word}</span>
         <button className={`why ${why ? 'on' : ''}`} onClick={() => setWhy(!why)} aria-pressed={why} aria-label="What this tool does" title="What this tool does">?</button>
         <button className={`open ${open ? 'on' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Show input and result" title="Show input and result">

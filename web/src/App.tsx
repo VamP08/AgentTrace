@@ -6,10 +6,11 @@ import { Timeline } from './views/Timeline';
 import { Diffs } from './views/Diffs';
 import { Agents } from './views/Agents';
 import { Learn } from './views/Learn';
+import { Context } from './views/Context';
 import { StackStrip } from './components/StackStrip';
 
 // Only views that exist. Others arrive when they are built, not before.
-const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Learn' }] as const;
+const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }, { id: 'Learn' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -28,6 +29,8 @@ export function App() {
   const [query, setQuery] = useState('');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
+  const [hooks, setHooks] = useState<any>();
+  const [commits, setCommits] = useState<any[]>([]);
   const socket = useRef<ReturnType<typeof openSocket>>();
 
   useEffect(() => {
@@ -59,6 +62,16 @@ export function App() {
   };
 
   const current = s.sessions.find((x) => x.id === s.selected);
+
+  // Side sources joined by id and time: the hook log (durations) and git (commits). Refetched
+  // every ten live batches for the selected session; both are small.
+  const tick = Math.floor(s.batches / 10);
+  useEffect(() => {
+    if (!s.selected) return;
+    const id = s.selected;
+    fetch(`/api/sessions/${id}/hooks`).then((r) => (r.ok ? r.json() : null)).then(setHooks).catch(() => setHooks(null));
+    fetch(`/api/sessions/${id}/commits`).then((r) => (r.ok ? r.json() : [])).then(setCommits).catch(() => setCommits([]));
+  }, [s.selected, tick]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -170,7 +183,8 @@ export function App() {
             </header>
             <div className="stage">
               <StackStrip events={s.events} />
-              {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} />}
+              {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
+              {view === 'Context' && <Context events={s.events} hooks={hooks} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
               {view === 'Learn' && <Learn sessionId={current.id} cwd={current.cwd} />}
               {view === 'Helpers' && (

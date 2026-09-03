@@ -2,11 +2,13 @@
 // Plain node:http; the HTTP surface is four GET routes.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, sessionFile } from './discover.js';
 import { readRecord } from './docs.js';
+import { commitsBetween, gitRootsFor, showCommit } from './git.js';
+import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
 import { parseFile, type ParsedFile } from './parse.js';
 import { detectStack } from './stack.js';
@@ -71,6 +73,29 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       const slug = SESSION_ID.test(id) ? slugFor(id) : undefined;
       if (!slug) return json(res, 404, { error: 'unknown session' });
       if (parts[3] === 'agents') return json(res, 200, discoverAgents(claudeRoot, slug, id));
+      if (parts[3] === 'hooks') {
+        const h = readHookLog(claudeRoot, id);
+        return h ? json(res, 200, h) : json(res, 404, { error: 'no hook log for this session; install hooks/install-settings.mjs' });
+      }
+      if (parts[3] === 'commits') {
+        const session = discoverSessions(claudeRoot).find((x) => x.id === id);
+        if (!session?.cwd) return json(res, 404, { error: 'unknown session' });
+        const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });
+        const repos = gitRootsFor(session.cwd, trackedFiles(parsed.events).map((f) => f.path));
+        const sha = url.searchParams.get('sha');
+        if (sha) {
+          for (const repo of repos) {
+            const body = showCommit(repo, sha);
+            if (body !== undefined) return text(res, 200, body);
+          }
+          return json(res, 404, { error: 'unknown commit' });
+        }
+        // a little slack either side: clocks and the last commit after the final line
+        const since = new Date(new Date(session.startedAt).getTime() - 60_000).toISOString();
+        const until = new Date(new Date(session.updatedAt).getTime() + 30 * 60_000).toISOString();
+        const all = repos.flatMap((repo) => commitsBetween(repo, since, until).map((c) => ({ ...c, repo: basename(repo) })));
+        return json(res, 200, all.sort((a, b) => (a.ts < b.ts ? 1 : -1)));
+      }
       if (parts[3] === 'record') {
         const session = discoverSessions(claudeRoot).find((x) => x.id === id);
         const parsed = await parseFile(sessionFile(claudeRoot, slug, id), { sessionId: id });

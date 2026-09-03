@@ -296,3 +296,32 @@ button.chip:hover { background: var(--hover); color: var(--text); }
 .doc pre.code, .doc pre.fm { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); margin: 0 0 12px; }
 .doc-files { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .doc-files code { padding: 2px 6px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--panel); }
+
+/* ---------- commits, durations, context view ---------- */
+.row.commit .text { padding: 8px 0; color: var(--text-2); }
+.row.commit > .who { color: var(--ok); }
+.row.commit .sha { color: var(--text); }
+.row.commit .c { color: var(--text-3); font-size: 12px; }
+.row.commit .add { color: var(--ok); font-weight: 500; }
+.row.commit .del { color: var(--fail); font-weight: 500; }
+.row.commit .link { margin-left: 10px; color: var(--accent); text-decoration: none; }
+.row.commit .link:hover { text-decoration: underline; }
+.card .dur { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.ctx-table { padding: 0 24px 40px; }
+.ctx-head, .ctx-line { display: grid; grid-template-columns: 32px minmax(0, 1fr) 220px 160px 60px; gap: 12px; align-items: center; }
+.ctx-head { padding: 10px 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.ctx-head span:first-child { grid-column: 1 / 3; }
+.ctx-line { width: 100%; padding: 8px 12px; text-align: left; border-top: 1px solid var(--line); }
+.ctx-line:hover { background: var(--hover); }
+.ctx-line .n { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+.ctx-line .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-line .c { color: var(--text-3); font-size: 12px; text-align: right; }
+.bar { position: relative; height: 18px; background: var(--raised); border-radius: var(--r-s); overflow: hidden; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-right: 2px solid var(--accent); }
+.bar.out i { background: rgba(94, 196, 143, 0.16); border-right-color: var(--ok); }
+.bar b { position: absolute; right: 8px; top: 0; line-height: 18px; font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
+.ctx-detail { padding: 8px 12px 14px 56px; border-top: 1px solid var(--line); background: var(--panel); }
+.ctx-item { margin-top: 8px; border: 1px solid var(--line); border-radius: var(--r); }
+.ctx-item summary { padding: 6px 10px; cursor: pointer; color: var(--text-2); }
+.ctx-item summary .c { color: var(--text-3); font-size: 12px; margin-left: 8px; }
+.ctx-item pre { padding: 8px 10px; border-top: 1px solid var(--line); max-height: 320px; overflow: auto; }

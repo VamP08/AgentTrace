@@ -25,8 +25,11 @@ interface Turn {
 
 type Row =
   | { key: string; kind: 'chapter'; turn: Turn; open: boolean }
+  | { key: string; kind: 'commit'; commit: Commit }
   | { key: string; kind: 'assistant' | 'context' | 'raw'; ev: Event }
   | { key: string; kind: 'tool'; ev: ToolCallEvent; result?: ToolResultEvent; agent?: AgentInfo; first: boolean };
+
+export interface Commit { sha: string; ts: string; subject: string; repo?: string; files: { path: string; added: number; removed: number }[] }
 
 interface Props {
   events: Event[];
@@ -35,6 +38,10 @@ interface Props {
   parseErrors: number;
   batches: number;
   live: boolean;
+  /** toolUseId -> ms, from the hook log */
+  durations?: Record<string, number>;
+  commits?: Commit[];
+  sessionId?: string;
 }
 
 const WAIT_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
@@ -72,7 +79,7 @@ export function turnState(t: Turn, live: boolean): string {
   return 'Answered';
 }
 
-export function Timeline({ events, agents, loading, parseErrors, batches, live }: Props) {
+export function Timeline({ events, agents, loading, parseErrors, batches, live, durations, commits = [], sessionId }: Props) {
   const [show, setShow] = useState<Record<string, boolean>>({ context: false, raw: false });
   const [follow, setFollow] = useState(true);
   const [openTurns, setOpenTurns] = useState<Record<number, boolean>>({});
@@ -100,6 +107,10 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live }
       const open = isOpen(t);
       out.push({ key: `turn:${t.n}`, kind: 'chapter', turn: t, open });
       if (!open) continue;
+      // commits made while this turn was running belong to it; the last turn also owns later ones
+      const next = turns[t.n];
+      const mine = commits.filter((c) => c.ts >= t.startTs && (!next || c.ts < next.startTs));
+      for (const c of mine) out.push({ key: `commit:${c.sha}`, kind: 'commit', commit: c });
       for (const e of t.events) {
         switch (e.kind) {
           case 'assistant_text': out.push({ key: e.id, kind: 'assistant', ev: e }); break;
@@ -112,7 +123,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live }
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, turns, results, agentByTool, show, openTurns, live]);
+  }, [events, turns, results, agentByTool, show, openTurns, live, commits]);
 
   const virt = useVirtualizer({
     count: rows.length,
@@ -160,7 +171,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live }
         <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
           {virt.getVirtualItems().map((v) => (
             <div key={v.key} data-index={v.index} ref={virt.measureElement} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}>
-              <RowView row={rows[v.index]} live={live} onToggle={(t) => setOpenTurns({ ...openTurns, [t.n]: !isOpen(t) })} />
+              <RowView row={rows[v.index]} live={live} durations={durations} sessionId={sessionId} onToggle={(t) => setOpenTurns({ ...openTurns, [t.n]: !isOpen(t) })} />
             </div>
           ))}
         </div>
@@ -235,7 +246,23 @@ function Stat({ n, label, tone }: { n: number | string; label: string; tone?: 'f
   );
 }
 
-function RowView({ row, live, onToggle }: { row: Row; live: boolean; onToggle: (t: Turn) => void }) {
+function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live: boolean; durations?: Record<string, number>; sessionId?: string; onToggle: (t: Turn) => void }) {
+  if (row.kind === 'commit') {
+    const c = row.commit;
+    const added = c.files.reduce((n, f) => n + f.added, 0);
+    const removed = c.files.reduce((n, f) => n + f.removed, 0);
+    return (
+      <div className="row commit">
+        <div className="time">{clock(c.ts)}</div>
+        <div className="who">Commit</div>
+        <div className="text">
+          {c.repo && <span className="c repo">{c.repo} </span>}<span className="mono sha">{c.sha}</span> {c.subject}
+          <span className="c"> · {c.files.length} file{c.files.length === 1 ? '' : 's'} <b className="add">+{added}</b> <b className="del">−{removed}</b></span>
+          {sessionId && <a className="c link" href={`/api/sessions/${sessionId}/commits?sha=${c.sha}`} target="_blank" rel="noreferrer">show diff</a>}
+        </div>
+      </div>
+    );
+  }
   if (row.kind === 'chapter') {
     const t = row.turn;
     const state = turnState(t, live);
@@ -269,7 +296,7 @@ function RowView({ row, live, onToggle }: { row: Row; live: boolean; onToggle: (
         <div className="row tool">
           <div className="time">{time}</div>
           <div className="who">Tool</div>
-          <ToolCard call={row.ev} result={row.result} agent={row.agent} first={row.first} />
+          <ToolCard call={row.ev} result={row.result} agent={row.agent} first={row.first} durationMs={durations?.[row.ev.toolUseId]} />
         </div>
       );
     case 'context':
