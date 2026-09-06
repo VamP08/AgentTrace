@@ -3,9 +3,9 @@
 // Nothing is inferred; every line names the session or commit it comes from, and the opening
 // section says which evidence exists so the skill can decide which documents it may write.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { STACK, type ProjectDetail, type ProjectRecord, type Session } from '@agenttrace/shared';
+import { STACK, type Project, type ProjectDetail, type ProjectDocument, type ProjectRecord, type Session } from '@agenttrace/shared';
 import { archivedCommits } from './archive.js';
 import { discoverAgents } from './discover.js';
 import { defaultBranch } from './git.js';
@@ -22,6 +22,9 @@ const MAX_REASONED = 60;
 const RECORD_NAMES = ['roadmap.md', 'stack.md', 'architecture.md', 'design.md', 'gaps.md', 'learning', 'decisions', 'journal'];
 /** Words that mark a commit message as stating a reason, not only a change. */
 const REASON = /\b(because|so that|instead of|rather than|in order to|to avoid|otherwise|the reason|why)\b/i;
+/** The only extensions a document may have; nothing else is readable through the documents route. */
+const TEXT = /\.(md|rst|txt)$/i;
+const MAX_DOC_BYTES = 2 * 1024 * 1024;
 
 interface LogLine {
   sha: string;
@@ -95,19 +98,45 @@ function topLevel(root: string): string[] {
   return names(root).filter((n) => n !== '.git' && n !== 'node_modules').slice(0, 40);
 }
 
+/** One folder a project's documents may sit in, and how a path inside it is shown. */
+export interface DocDir {
+  dir: string;
+  show: (full: string) => string;
+  where: ProjectDocument['where'];
+  /** the folder is the record itself, so the record's own file names are not documents */
+  isRecord?: boolean;
+}
+
+/**
+ * Where a project's documents live: in the repository, or beside the record when the owner keeps
+ * notes elsewhere — the record folder itself, or its parent when the record sits in an
+ * `agenttrace` subfolder, whose siblings are then the owner's own documents.
+ */
+export function docDirsFor(p: Pick<Project, 'root' | 'recordRoot' | 'recordMissing'>): DocDir[] {
+  const dirs: DocDir[] = [];
+  if (existsSync(p.root)) dirs.push({ dir: p.root, show: (full) => relative(p.root, full).replace(/\\/g, '/'), where: 'repository' });
+  const recordDir = p.recordRoot && !p.recordMissing ? p.recordRoot : undefined;
+  if (recordDir && !inside(p.root, recordDir)) {
+    const sub = basename(recordDir).toLowerCase() === 'agenttrace';
+    dirs.push({ dir: sub ? dirname(recordDir) : recordDir, show: (full) => resolve(full).replace(/\\/g, '/'), where: 'notes', isRecord: !sub });
+  }
+  return dirs;
+}
+
 /**
  * Text documents at the root of each folder and one level under its docs/, the documents a
  * backfill may cite. Record files are not documents: they are what is being written.
  */
-function documents(dirs: { dir: string; show: (full: string) => string; isRecord?: boolean }[]): string[] {
-  const out: string[] = [];
-  for (const { dir, show, isRecord } of dirs) {
+export function documents(dirs: DocDir[]): ProjectDocument[] {
+  const out: ProjectDocument[] = [];
+  for (const { dir, show, where, isRecord } of dirs) {
     for (const d of [dir, join(dir, 'docs')]) {
       for (const n of names(d)) {
         if (isRecord && RECORD_NAMES.includes(n.toLowerCase())) continue;
         const full = join(d, n);
         try {
-          if (/\.(md|rst|txt)$/i.test(n) && statSync(full).isFile()) out.push(show(full));
+          const st = statSync(full);
+          if (TEXT.test(n) && st.isFile()) out.push({ path: resolve(full).replace(/\\/g, '/'), label: show(full), where, bytes: st.size, modified: st.mtime.toISOString() });
         } catch {
           // vanished between listing and stat
         }
@@ -115,6 +144,43 @@ function documents(dirs: { dir: string; show: (full: string) => string; isRecord
     }
   }
   return out.slice(0, 60);
+}
+
+function realDir(dir: string): string | undefined {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return undefined; // not on disk
+  }
+}
+
+/**
+ * One document, by absolute path, read-only. A trust boundary: the path is resolved through any
+ * link first, then served only from the folders the list itself came from, only when it is a
+ * regular file with a text extension, and only its first 2 MB. Anything else is nothing.
+ */
+export function readDocument(dirs: DocDir[], file: string): { path: string; content: string } | undefined {
+  if (!TEXT.test(file)) return undefined;
+  let full: string;
+  let size: number;
+  try {
+    full = realpathSync(resolve(file));
+    const st = statSync(full);
+    if (!st.isFile()) return undefined;
+    size = st.size;
+  } catch {
+    return undefined; // not on disk, or a link to nowhere
+  }
+  const roots = dirs.flatMap(({ dir }) => [dir, join(dir, 'docs')]).map(realDir);
+  if (!roots.some((r) => r !== undefined && inside(r, full))) return undefined;
+  const fd = openSync(full, 'r');
+  try {
+    const buf = Buffer.alloc(Math.min(size, MAX_DOC_BYTES));
+    if (buf.length) readSync(fd, buf, 0, buf.length, 0);
+    return { path: full.replace(/\\/g, '/'), content: buf.toString('utf8') };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Folders or files whose name says they hold decisions, in the same folders documents are read from. */
@@ -182,15 +248,8 @@ export async function buildDossier(p: ProjectDetail, sessions: Map<string, Sessi
   const tagList = present ? tags(p.root) : [];
   const recordDir = p.recordRoot && !p.recordMissing ? p.recordRoot : undefined;
   const clash = recordDir ? clashes(recordDir) : [];
-  // Documents live in the repository, or beside the record when the owner keeps notes elsewhere:
-  // the record folder itself, or its parent when the record sits in an `agenttrace` subfolder.
-  const docDirs: { dir: string; show: (full: string) => string; isRecord?: boolean }[] = [];
-  if (present) docDirs.push({ dir: p.root, show: (full) => relative(p.root, full).replace(/\\/g, '/') });
-  if (recordDir && !inside(p.root, recordDir)) {
-    const sub = basename(recordDir).toLowerCase() === 'agenttrace';
-    docDirs.push({ dir: sub ? dirname(recordDir) : recordDir, show: (full) => resolve(full).replace(/\\/g, '/'), isRecord: !sub });
-  }
-  const docs = documents(docDirs);
+  const docDirs = docDirsFor(p);
+  const docs = documents(docDirs).map((d) => d.label);
   const decisionDocs = decisionSources(docDirs);
   const statusLogs = docs.filter((d) => /progress|changelog|journal|status|history/i.test(basename(d)));
   const reasoned = commits.filter((c) => c.body.length > 0 || REASON.test(c.subject));

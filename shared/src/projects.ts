@@ -43,6 +43,18 @@ export interface Project {
   gone: boolean;
 }
 
+/** A Markdown or text document the project already keeps, read-only: the app never writes to one. */
+export interface ProjectDocument {
+  /** absolute path, forward slashes */
+  path: string;
+  /** how it is shown: relative to the repository, absolute for a folder outside it */
+  label: string;
+  /** in the repository, or in the folder the record sits in */
+  where: 'repository' | 'notes';
+  bytes: number;
+  modified: string;
+}
+
 /** A session that touched no repository, listed under the folder it ran in. */
 export interface MiscSession {
   sessionId: string;

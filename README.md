@@ -26,28 +26,50 @@ time, by hand or by the coding session itself through a skill.
 Requires Node 20 or later.
 
 ```
-npm install
-npx tsx server/src/index.ts        # API and live stream on http://127.0.0.1:4747
-cd web && npx vite                  # page on http://127.0.0.1:4748
+npx agenttrace
 ```
 
-Open `http://127.0.0.1:4748`. The sidebar lists every session on the machine, live ones first.
+That starts the server and the page on one port, prints the URL and opens a browser.
+`AGENTTRACE_PORT` moves it off 4747.
+
+From a clone, for development:
+
+```
+npm install
+npm run dev
+```
+
+One command, both halves: the API and live stream on `http://127.0.0.1:4747`, and the page on
+`http://localhost:4748` with Vite forwarding `/api` and `/ws` to the server. `AGENTTRACE_PORT` and
+`AGENTTRACE_WEB_PORT` move either one; anything after `--` goes to Vite. Ctrl-C stops both, and if
+either half exits the other is stopped with it.
+
+The sidebar lists every session on the machine, grouped by project, most recently changed first.
 
 The server binds to the loopback address only, sends no cross-origin headers, and refuses
 requests whose Host is not localhost.
 
 ## Views
 
-- **Turns.** A Now panel with the latest request, the model's latest line, the running tool and
-  its explanation; then each turn as a chapter with counts, folded until opened. Commits made
-  during a turn appear inside it.
+A session opens on four views:
+
+- **Turns.** While the session is live, a Now panel with the latest request, the model's latest
+  line, and the running tool with its explanation; once it is over, a summary of the whole
+  session instead. Below either, each turn as a chapter with counts, folded until opened.
+  Commits made during a turn appear inside it.
 - **Files.** Every file the session touched, every backed-up version, and the line diff between
   a version and the one before it, or between the last backup and the file on disk now.
 - **Helpers.** Each subagent with the brief it received, its transcript, and its report back.
 - **Context.** Per turn: the size of the context the model saw, tokens written, replies, and
   everything that entered the context without you typing it.
-- **Learn.** The project's record as a learning path: concepts by type, decisions, journal,
-  and the project documents.
+
+Clicking a project name in the sidebar opens the project instead of a session, with three tabs:
+
+- **Overview.** What the repository is, the projects it shares sessions with, its own sessions,
+  and whether it keeps a record.
+- **Learn.** The project's record as a learning path: concepts by type, decisions, journal, and
+  the record's own documents — roadmap, stack, architecture, design, gaps.
+- **Documents.** The documents the repository already keeps, read in place.
 
 ## The record
 
@@ -69,7 +91,7 @@ each one `reconstructed`.
 
 ## Hooks
 
-`hooks/install-settings.mjs` registers a small logger for every Claude Code hook event and
+`hooks/install-settings.mjs` registers a small logger for thirteen Claude Code hook events and
 wraps the status line command. It backs up `settings.json` first and prints the backup path.
 The logger appends one JSON line per event to `~/.claude/agenttrace/hooks/<session>.jsonl` and
 never blocks the session.
@@ -80,11 +102,20 @@ never blocks the session.
 npx vitest run --root server
 ```
 
-Parser, discovery, tailer, file history, stack detection, record reader, hook log and git are
-covered. The parser is also timed against a 25 MB real session.
+Parser, discovery, tailer, file history, stack detection, record reader, document reader, hook
+log, archive, project folding, dossier and git are covered.
+
+`server/test/bench.ts` times the parser against a transcript you name; it takes a path and
+prints milliseconds, event counts and peak heap. It is not part of the test run, and no
+transcript ships with the repository.
+
+```
+npx tsx server/test/bench.ts ~/.claude/projects/<project>/<session>.jsonl
+```
 
 ## Status
 
-Built and verified on Windows against real sessions. macOS and Linux paths for the scratchpad
-and MCP logs are designed but not yet tested. The status-line wrapper has not been confirmed
-from a terminal session. The design pass over the views is still ahead.
+Built and verified on Windows against real sessions. Every path is derived from `CLAUDE_CONFIG_DIR`
+or the home directory and joined with `node:path`, so macOS and Linux should work, but nothing has
+been run there yet. The status-line wrapper has not been confirmed from a terminal session. The
+design pass over the views is still ahead.

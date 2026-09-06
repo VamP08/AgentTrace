@@ -1,18 +1,39 @@
 {
   "name": "agenttrace",
-  "private": true,
   "version": "0.1.0",
   "description": "Live, explained view of a Claude Code session: what went in, what came out, and why.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "agenttrace": "bin/agenttrace.mjs"
+  },
+  "files": [
+    "bin/",
+    "server/dist/",
+    "server/package.json",
+    "shared/dist/",
+    "shared/package.json",
+    "web/dist/",
+    "hooks/",
+    "skill/"
+  ],
   "workspaces": [
     "shared",
     "server",
     "web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace server & npm run dev --workspace web",
+    "dev": "node scripts/dev.mjs",
     "build": "npm run build --workspaces",
+    "start": "node bin/agenttrace.mjs",
     "test": "npm test --workspaces --if-present",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "gray-matter": "^4.0.3",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

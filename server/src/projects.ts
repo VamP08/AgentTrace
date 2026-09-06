@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session, SessionLink } from '@agenttrace/shared';
 import { discoverSessions } from './discover.js';
-import { archiveLog, archiveSession } from './archive.js';
+import { archiveLog, archiveSession, loadSettings, pruneArchive } from './archive.js';
 import { findManifest } from './docs.js';
 import { keyOf, loadRegistry, lookup, saveRegistry, upsert, type Registry } from './repos.js';
 import { parseFile } from './parse.js';
@@ -268,6 +268,9 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
   }
   saveIndex(claudeRoot, next, manifestKey);
   rememberRepos(claudeRoot, next);
+  // The pass has just copied everything it indexed; if a size limit is set, trim back to it now.
+  const cap = loadSettings(claudeRoot).archiveCapBytes;
+  if (cap !== null) pruneArchive(claudeRoot, cap);
   return { facts: new Map(Object.entries(next)), sessions: new Map(sessions.map((s) => [s.id, s])) };
 }
 

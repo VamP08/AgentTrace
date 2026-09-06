@@ -2,15 +2,15 @@
 // Plain node:http; the HTTP surface is four GET routes.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { homedir } from 'node:os';
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, Project, ProjectRecord, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
-import { archiveSession, archiveStats, livePaths } from './archive.js';
+import { archiveSession, archiveStats, livePaths, loadSettings, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
-import { buildDossier } from './dossier.js';
+import { buildDossier, docDirsFor, documents, readDocument } from './dossier.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
@@ -64,6 +64,16 @@ function text(res: ServerResponse, status: number, body: string) {
   res.end(body);
 }
 
+/** Request body as a string; capped, since the only bodies here are a few dozen bytes of settings. */
+async function readBody(req: IncomingMessage): Promise<string> {
+  let out = '';
+  for await (const chunk of req) {
+    out += chunk;
+    if (out.length > 4096) throw new Error('body too large');
+  }
+  return out;
+}
+
 const repoRoot = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const skillSource = join(repoRoot, 'skill', 'SKILL.md');
 const skillTarget = join(claudeRoot, 'skills', 'agenttrace', 'SKILL.md');
@@ -99,7 +109,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   const parts = url.pathname.split('/').filter(Boolean);
   if (!localHost(req)) return json(res, 403, { error: 'local access only' });
   try {
-    if (parts[0] !== 'api') return json(res, 404, { error: 'not found' });
+    // Anything not under /api is the built page (see the static block below); API paths never reach it.
+    if (parts[0] !== 'api') return serveStatic(url.pathname, res);
     if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: archiveStats(claudeRoot) });
     if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
       if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
@@ -107,6 +118,29 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       for (const name of ['SKILL.md', 'register.mjs']) copyFileSync(join(dirname(skillSource), name), join(dirname(skillTarget), name));
       return json(res, 200, setupStatus());
     }
+    // ---- archive size limit ----
+    if (parts[1] === 'settings' && parts.length === 2) {
+      if (req.method === 'PUT') {
+        let body: unknown;
+        try {
+          body = JSON.parse(await readBody(req));
+        } catch {
+          return json(res, 400, { error: 'body must be JSON' });
+        }
+        const cap = (body as { archiveCapBytes?: unknown } | null)?.archiveCapBytes;
+        if (cap !== null && !(typeof cap === 'number' && Number.isInteger(cap) && cap >= MIN_CAP_BYTES)) {
+          return json(res, 400, { error: `archiveCapBytes must be null or a whole number of bytes, at least ${MIN_CAP_BYTES}` });
+        }
+        saveSettings(claudeRoot, { archiveCapBytes: cap });
+      }
+      return json(res, 200, { ...loadSettings(claudeRoot), minCapBytes: MIN_CAP_BYTES });
+    }
+    if (parts[1] === 'archive' && parts[2] === 'prune' && parts.length === 3 && req.method === 'POST') {
+      const cap = loadSettings(claudeRoot).archiveCapBytes;
+      if (cap === null) return json(res, 400, { error: 'no size limit is set' });
+      return json(res, 200, pruneArchive(claudeRoot, cap));
+    }
+    // ---- end archive size limit ----
     if (parts[1] === 'projects' && parts.length === 2) {
       const { facts, sessions } = await buildFacts(claudeRoot);
       return json(res, 200, foldProjects(facts, sessions));
@@ -119,6 +153,15 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!detail) return json(res, 404, { error: 'unknown project' });
       if (parts.length === 3) return json(res, 200, detail);
       if (parts[3] === 'dossier') return text(res, 200, await buildDossier(detail, sessions, recordFor(detail), claudeRoot));
+      // ---- the project's own documents, read-only ----
+      if (parts[3] === 'documents') {
+        const dirs = docDirsFor(detail);
+        const want = url.searchParams.get('file');
+        if (!want) return json(res, 200, documents(dirs));
+        const doc = readDocument(dirs, want);
+        return doc ? json(res, 200, doc) : json(res, 404, { error: 'not a document of this project' });
+      }
+      // ---- end project documents ----
       if (parts[3] !== 'record') return json(res, 404, { error: 'not found' });
       if (detail.recordMissing) return json(res, 200, { present: false, missing: detail.recordRoot });
       const record = recordFor(detail);
@@ -212,6 +255,41 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+// ---- the built page, served from this same port -------------------------------------------
+// Only reached for paths outside /api, so no route above can be shadowed. In development the
+// page comes from Vite instead and web/dist need not exist.
+const webDist = resolve(repoRoot, 'web', 'dist');
+const CONTENT_TYPE: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.map': 'application/json; charset=utf-8',
+};
+
+/** A file from web/dist, or index.html when the path names no file. Never a directory, never outside web/dist. */
+function serveStatic(pathname: string, res: ServerResponse) {
+  let file = join(webDist, 'index.html');
+  try {
+    const want = resolve(webDist, '.' + decodeURIComponent(pathname));
+    // A path that escapes web/dist, or names a directory, falls back to index.html rather than listing anything.
+    if (want.startsWith(webDist + sep) && statSync(want, { throwIfNoEntry: false })?.isFile()) file = want;
+  } catch {
+    // a malformed percent-escape is not a filename; index.html answers it
+  }
+  if (!statSync(file, { throwIfNoEntry: false })?.isFile()) {
+    return json(res, 404, { error: 'the page has not been built; run npm run build' });
+  }
+  res.writeHead(200, { 'content-type': CONTENT_TYPE[extname(file).toLowerCase()] ?? 'application/octet-stream' });
+  res.end(readFileSync(file));
+}
+// ---- end static -----------------------------------------------------------------------------
+
 /** One subscription per socket: the session it wants, including all of that session's subagents. */
 export function attachWebSocket(server: ReturnType<typeof createServer>, tailer: Tailer) {
   const wss = new WebSocketServer({ server, path: '/ws' });
@@ -255,12 +333,15 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
   return wss;
 }
 
-if (process.argv[1] && /index\.(ts|js)$/.test(process.argv[1])) {
+/** Listen on the loopback address and start tailing. Resolves with the base URL. The bin script calls this too. */
+export function start(p: number = port): Promise<string> {
   const server = createServer(handle);
   const tailer = new Tailer(join(claudeRoot, 'projects')).start();
   tailer.on('error', (e) => console.error('tailer', e));
   attachWebSocket(server, tailer);
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`agenttrace server http://127.0.0.1:${port}  ws://127.0.0.1:${port}/ws  root=${claudeRoot}`);
-  });
+  return new Promise((ok) => server.listen(p, '127.0.0.1', () => ok(`http://127.0.0.1:${p}`)));
+}
+
+if (process.argv[1] && /index\.(ts|js)$/.test(process.argv[1])) {
+  start().then((url) => console.log(`agenttrace server ${url}  ${url.replace('http', 'ws')}/ws  root=${claudeRoot}`));
 }
