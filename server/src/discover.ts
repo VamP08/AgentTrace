@@ -83,7 +83,10 @@ function firstUserText(head: string): string | undefined {
       const c = rec.message?.content;
       const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b: any) => b?.type === 'text')?.text : undefined;
       // system-injected caveats and command wrappers start with a tag; a person's prompt does not
-      if (typeof text === 'string' && text.trim() && !text.trim().startsWith('<')) return text.trim().slice(0, 120);
+      if (typeof text === 'string' && text.trim() && !text.trim().startsWith('<')) {
+        const t = text.trim();
+        return t.length > 120 ? `${t.slice(0, 119)}…` : t;
+      }
     } catch {
       // partial line at the 64KB boundary
     }
