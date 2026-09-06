@@ -34,11 +34,19 @@ function str(v: unknown, fallback = ''): string {
   return v === undefined || v === null ? fallback : v instanceof Date ? v.toISOString() : String(v);
 }
 
+// gray-matter caches the file object under the raw text before it parses the frontmatter, and only
+// when no options are passed. A YAML error therefore leaves a half-built entry — empty data, body
+// still holding the frontmatter — in that cache, and every later read of the same text gets it back
+// without throwing. Pass an (empty) options object so each read parses for real.
+function frontmatter(text: string) {
+  return matter(text, {});
+}
+
 function readDoc(root: string, name: string, unparsed: ProjectRecord['unparsed']): RecordDoc<any> | undefined {
   const file = join(root, name);
   if (!existsSync(file)) return undefined;
   try {
-    const m = matter(readFileSync(file, 'utf8'));
+    const m = frontmatter(readFileSync(file, 'utf8'));
     return { updated: str(m.data.updated, undefined as any), data: m.data, body: m.content.trim() };
   } catch (e) {
     unparsed.push({ file: name, error: (e as Error).message });
@@ -46,17 +54,24 @@ function readDoc(root: string, name: string, unparsed: ProjectRecord['unparsed']
   }
 }
 
-function readFolder<T>(root: string, folder: string, unparsed: ProjectRecord['unparsed'], map: (slug: string, data: Record<string, any>, body: string) => T): T[] {
+/** `required` is the frontmatter field an entry is useless without: without it the file is reported, not returned half-empty. */
+function readFolder<T>(root: string, folder: string, required: string, unparsed: ProjectRecord['unparsed'], map: (slug: string, data: Record<string, any>, body: string) => T): T[] {
   const dir = join(root, folder);
   if (!existsSync(dir)) return [];
   const out: T[] = [];
   for (const name of readdirSync(dir)) {
     if (!name.endsWith('.md')) continue;
+    const rel = `${folder}/${name}`;
     try {
-      const m = matter(readFileSync(join(dir, name), 'utf8'));
+      const m = frontmatter(readFileSync(join(dir, name), 'utf8'));
+      const value = m.data?.[required];
+      if (value === undefined || value === null || value === '') {
+        unparsed.push({ file: rel, error: `${rel}: frontmatter did not parse or has no "${required}"` });
+        continue;
+      }
       out.push(map(basename(name, '.md'), m.data, m.content.trim()));
     } catch (e) {
-      unparsed.push({ file: `${folder}/${name}`, error: (e as Error).message });
+      unparsed.push({ file: rel, error: `${rel}: frontmatter did not parse: ${(e as Error).message}` });
     }
   }
   return out;
@@ -86,7 +101,7 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
 /** Read a record whose location is already known: from a manifest, or from the registry once the repository folder is gone. */
 export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectManifest; root: string; repoDir: string }): ProjectRecord | undefined {
   const unparsed: ProjectRecord['unparsed'] = [];
-  const learning = readFolder<LearningEntry>(root, 'learning', unparsed, (slug, d, body) => ({
+  const learning = readFolder<LearningEntry>(root, 'learning', 'title', unparsed, (slug, d, body) => ({
     slug,
     title: str(d.title, slug),
     summary: str(d.summary),
@@ -106,7 +121,7 @@ export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectMan
     exercise: d.exercise && typeof d.exercise === 'object' && d.exercise.task ? { task: String(d.exercise.task), hint: d.exercise.hint ? String(d.exercise.hint) : undefined, solution: d.exercise.solution ? String(d.exercise.solution) : undefined } : undefined,
     body,
   })).sort((a, b) => (a.date < b.date ? -1 : 1));
-  const decisions = readFolder<Decision>(root, 'decisions', unparsed, (slug, d, body) => ({
+  const decisions = readFolder<Decision>(root, 'decisions', 'title', unparsed, (slug, d, body) => ({
     slug,
     title: str(d.title, slug),
     status: d.status === 'superseded' ? 'superseded' : 'accepted',
@@ -118,7 +133,7 @@ export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectMan
     source: d.source ? String(d.source) : undefined,
     body,
   })).sort((a, b) => (a.date < b.date ? 1 : -1));
-  const journal = readFolder<JournalEntry>(root, 'journal', unparsed, (slug, d, body) => ({
+  const journal = readFolder<JournalEntry>(root, 'journal', 'date', unparsed, (slug, d, body) => ({
     slug,
     date: str(d.date),
     started: str(d.started),
