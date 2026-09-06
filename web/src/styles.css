@@ -39,6 +39,7 @@
   --band-del: rgba(244, 126, 113, 0.16);
 
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  --scrim: rgba(17, 15, 20, 0.62);
 
   --font-ui: 'Archivo Variable', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'Cascadia Code', Consolas, monospace;
@@ -79,6 +80,7 @@
   --band-del: rgba(178, 51, 36, 0.16);
 
   --shadow: 0 8px 24px rgba(26, 21, 35, 0.1);
+  --scrim: rgba(26, 21, 35, 0.42);
 }
 
 /* ---------- base, and the browser surfaces the design still owns ---------- */
@@ -104,14 +106,14 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5
 h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 /* the shared reading measure: this rule is what a view's own sheet reuses rather than redefining */
 .measure { max-width: var(--measure); }
-.head h2, .empty h3, .firstrun h2, .doc h2, .lesson h2, .lesson-body h3, .setup h3 { text-wrap: pretty; }
+.head h2, .empty h3, .firstrun h2 { text-wrap: pretty; }
 a { color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { color: var(--ink-2); }
 /* a [[wikilink]] in the record: a Bare control that sits in the line of prose it belongs to */
 .wikilink { display: inline; font: inherit; color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .wikilink:hover { color: var(--ink-2); }
 /* every count, clock, duration and byte figure holds its column while it ticks */
-.num, .c, .n, .m, .meta, .dur, .stat b, .bar b, .chapter .c, .ctx-line .c, .diffhead .stats, .progress { font-variant-numeric: tabular-nums; }
+.c, .n, .m, .meta, .dur, .stat b, .bar b, .chapter .c, .ctx-line .c, .diffhead .stats { font-variant-numeric: tabular-nums; }
 
 /* ---------- buttons: Line by default, Fill once per screen, Bare for the rest ---------- */
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--hairline-strong); color: var(--ink-2); background: var(--surface); white-space: nowrap; }
@@ -415,52 +417,7 @@ pre.diff .add, pre.diff .del { color: var(--ink); display: inline-block; width: 
 .row.commit .del { color: var(--danger); font-weight: 500; }
 .row.commit .link { margin-left: 10px; color: var(--ink-2); }
 
-/* ---------- lessons and records ---------- */
-.learn-tabs { display: flex; gap: 4px; padding: 10px 12px 6px; flex-wrap: wrap; }
-.learn-filter { display: flex; gap: 4px; padding: 4px 12px 10px; flex-wrap: wrap; border-bottom: 1px solid var(--hairline); }
-.chip { font-size: 12px; height: 22px; padding: 0 8px; border-radius: var(--r-s); border: 1px solid var(--hairline); color: var(--ink-2); background: var(--surface); display: inline-flex; align-items: center; }
-.chip.on { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); box-shadow: inset 1px 0 0 var(--accent); }
-button.chip:hover { background: var(--hover); color: var(--ink); }
-.node.entry { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; width: 100%; padding: 8px 16px; text-align: left; border-bottom: 1px solid var(--hairline); align-items: baseline; }
-.node.entry .n { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); width: 22px; }
-.node.entry .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.node.entry .c { grid-column: 2; color: var(--ink-3); font-size: 12px; }
-.node.entry:hover { background: var(--hover); }
-.node.entry.sel { background: var(--accent-soft); box-shadow: inset 1px 0 0 var(--accent); }
-.node.entry.sel .c, .node.entry.sel .n { color: var(--ink-2); }
-.node.entry[disabled] { color: var(--ink-3); cursor: default; }
-.node.entry.read .n { color: var(--success); }
-.node.entry.read .p { color: var(--ink-2); }
-.learnpane { padding: 0; }
-.learn .files { display: flex; flex-direction: column; }
-.progress { display: grid; gap: 6px; padding: 4px 16px 10px; font-size: 12px; color: var(--ink-3); }
-.progress i { display: block; height: 4px; background: var(--raised); border-radius: 0; overflow: hidden; }
-.progress b { display: block; height: 100%; background: var(--accent); }
-.doc { max-width: 68ch; padding: 20px 28px 60px; }
-.doc-h { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-.doc-h .c, .doc-files .c { color: var(--ink-3); font-size: 12px; }
-.doc-path { min-width: 0; color: var(--ink-3); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doc h2 { font-size: 19px; margin-bottom: 6px; }
-.doc .lead { color: var(--ink-2); font-size: 15px; line-height: 1.65; margin: 0 0 16px; }
-.doc p { margin: 0 0 12px; font-size: 15px; line-height: 1.65; }
-.doc ul, .doc ol { margin: 0 0 12px; padding-left: 22px; font-size: 15px; line-height: 1.65; }
-.doc pre.code, .doc pre.fm { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--raised); margin: 0 0 12px; }
-.doc-files { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); }
-.doc-files code { padding: 2px 6px; border: 1px solid var(--hairline); border-radius: var(--r-s); background: var(--surface); }
-.lesson { max-width: none; padding: 20px 32px 80px; }
-.lesson h2 { font-size: 25px; letter-spacing: -0.02em; }
-.lesson .lead { font-size: 15px; }
-.lesson-grid { display: grid; grid-template-columns: minmax(0, 68ch) 180px; gap: 32px; align-items: start; }
-.lesson-body section { margin-top: 26px; scroll-margin-top: 12px; }
-.lesson-body h3 { font-size: 19px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--hairline); }
-.lesson-body h4 { font-size: 15px; margin: 14px 0 6px; }
-.lesson-body p { font-size: 15px; line-height: 1.65; margin: 0 0 12px; }
-.lesson-body li { font-size: 15px; line-height: 1.65; margin-bottom: 4px; }
-.toc { position: sticky; top: 16px; display: grid; gap: 6px; font-size: 12px; padding-left: 12px; border-left: 1px solid var(--hairline); }
-.toc button { color: var(--ink-3); text-align: left; }
-.toc button:hover { color: var(--ink); }
-.codehead { display: flex; gap: 12px; align-items: baseline; margin-bottom: 4px; flex-wrap: wrap; }
-.codehead .c { color: var(--ink-3); font-size: 12px; }
+/* ---------- code windows and diagrams, from the Markdown component ---------- */
 pre.code { padding: 0; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--raised); margin: 0 0 12px; overflow-x: auto; }
 pre.code:not(.numbered) { padding: 10px 12px; }
 pre.code.numbered .ln { display: grid; grid-template-columns: 44px minmax(0, 1fr); }
@@ -473,26 +430,6 @@ pre.code.numbered .ln:first-child { padding-top: 8px; }
 pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .diagram { margin: 0 0 12px; padding: 12px; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); overflow-x: auto; }
 .diagram svg { max-width: 100%; height: auto; }
-.quiz { padding: 12px 14px; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); margin-bottom: 10px; }
-.quiz .q { font-weight: 500; margin-bottom: 8px; }
-.quiz .a, .lesson-body .a { margin: 8px 0 0; padding: 10px 12px; background: var(--accent-soft); border-radius: var(--r); color: var(--ink); }
-.lesson-end { display: flex; gap: 14px; align-items: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--hairline); }
-.check { display: inline-flex; gap: 8px; align-items: center; color: var(--ink-2); }
-.check input { width: 16px; height: 16px; }
-.path .chip[disabled] { opacity: 0.5; cursor: default; }
-
-/* ---------- setup ---------- */
-.setup h3 { font-size: 19px; margin: 26px 0 8px; display: flex; gap: 10px; align-items: center; }
-.setup .doc-h { justify-content: space-between; }
-.setup .c { color: var(--ink-3); font-size: 12px; }
-.setup .btn { margin: 4px 0 8px; }
-.setup .cap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 4px; color: var(--ink-2); }
-.setup .cap label { display: inline-flex; align-items: center; gap: 6px; }
-.setup .cap input[type='number'] { width: 84px; height: 28px; border-radius: var(--r); border: 1px solid var(--hairline); background: var(--ground); padding: 0 8px; color: var(--ink); }
-.setup .cap input[type='number']:focus { border-color: var(--accent); }
-.setup .cap input:disabled { color: var(--ink-3); }
-/* the note stays in the page so a screen reader announces it, but takes no room until it says something */
-.setup .cap-note:empty { margin: 0; line-height: 0; }
 
 /* ---------- project rows in the rail ---------- */
 .group.project { margin-top: 2px; }
@@ -507,11 +444,6 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .prow.sel .pname .m { color: var(--ink-2); }
 .live-dot { color: var(--live); }
 .group.project .sess { padding-left: 34px; }
-.ctx-line.day { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--hairline); align-items: baseline; }
-.ctx-line.day .n { font-family: var(--font-mono); color: var(--ink-3); }
-.ctx-line.day .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-button.ctx-line.day { width: 100%; text-align: left; }
-button.ctx-line.day:hover { background: var(--hover); }
 
 /* syntax colours from the palette, both themes. The accent is not one of them: it belongs to
    selection, and a keyword wearing it would put the selection colour on screen forty times. */
@@ -520,8 +452,7 @@ button.ctx-line.day:hover { background: var(--hover); }
    word beside them carries the state by itself. */
 .prow.sel .twist { color: var(--ink-2); }
 .sess.sel .live,
-.tree .node.sel .c.state.ok,
-.node.entry.sel.read .n { color: var(--ink-2); }
+.tree .node.sel .c.state.ok { color: var(--ink-2); }
 
 .hljs-comment, .hljs-quote { color: var(--ink-3); font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--ink); font-weight: 500; }
@@ -543,7 +474,7 @@ button.ctx-line.day:hover { background: var(--hover); }
   .side .brand { padding-right: 8px; }
   .side .close { display: inline-flex; margin-left: auto; }
   .side .brand .sub { margin-left: 0; }
-  .scrim { display: block; position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.5); border: 0; width: 100%; cursor: pointer; }
+  .scrim { display: block; position: fixed; inset: 0; z-index: 20; background: var(--scrim); border: 0; width: 100%; cursor: pointer; }
   .railbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px 0; }
   .railbar .btn { height: 44px; padding: 0 12px; }
   .head, .stage, .scroll, .now { min-width: 0; }
@@ -572,7 +503,7 @@ button.ctx-line.day:hover { background: var(--hover); }
   .ctx-head, .ctx-line { grid-template-columns: 28px minmax(0, 1fr) 110px 90px; }
   .ctx-head span:last-child, .ctx-line .c { display: none; }
   .ctx-line { min-height: 44px; }
-  .sess, .node, .node.entry, .ver, .chip, .toc button { min-height: 44px; }
+  .sess, .node, .ver { min-height: 44px; }
   .ver { height: 44px; }
   .prow { grid-template-columns: 44px minmax(0, 1fr); }
   .twist { height: 44px; }
@@ -580,12 +511,6 @@ button.ctx-line.day:hover { background: var(--hover); }
   .brief { margin-left: 14px; margin-right: 14px; }
   .agent-stage { height: 50vh; }
   .explainer { padding: 16px 14px 8px; }
-  .lesson { padding: 16px 14px 60px; }
-  .doc { padding: 16px 14px 60px; }
-}
-@media (max-width: 1100px) {
-  .lesson-grid { grid-template-columns: 1fr; }
-  .toc { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .dot.pulse { animation: none; }
