@@ -304,11 +304,24 @@ export function archivedCommits(claudeRoot: string, root: string): ArchivedLog |
 
 /**
  * Copy a repository's default-branch log into the archive when the branch has moved since the
- * last copy. One `rev-parse` per pass when nothing changed; the full log only when it did.
+ * last copy. A `stat` of `.git/logs/HEAD` settles the common case without starting git at all;
+ * otherwise one `rev-parse` per pass when nothing changed, and the full log only when it did.
  * Returns true when a copy was written.
  */
 export function archiveLog(claudeRoot: string, root: string): boolean {
   if (!existsSync(root)) return false;
+  const have = archivedCommits(claudeRoot, root);
+  // git is expensive at seventeen repositories a pass. `.git/logs/HEAD` is appended on every
+  // commit and checkout, so a copy no older than it cannot be behind. A worktree (`.git` is a
+  // file) or a repository with no reflog falls through to asking git.
+  if (have) {
+    try {
+      const dotGit = join(root, '.git');
+      if (statSync(dotGit).isDirectory() && statSync(join(dotGit, 'logs', 'HEAD')).mtimeMs <= Date.parse(have.archivedAt)) return false;
+    } catch {
+      // no reflog, unreadable, or an archivedAt that will not parse: ask git
+    }
+  }
   let branch: string, head: string;
   try {
     branch = defaultBranch(root);
@@ -316,7 +329,6 @@ export function archiveLog(claudeRoot: string, root: string): boolean {
   } catch {
     return false; // not a repository, or no commits yet
   }
-  const have = archivedCommits(claudeRoot, root);
   if (have && have.head === head) return false;
   let out: string;
   try {
