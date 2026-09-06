@@ -135,7 +135,7 @@ export function Diffs({ sessionId, events }: Props) {
                 </button>
               ))}
               <button
-                className={`ver now ${pick && pick.file.path === f.path && pick.index === 'now' ? 'sel' : ''}`}
+                className={`ver current ${pick && pick.file.path === f.path && pick.index === 'now' ? 'sel' : ''}`}
                 onClick={() => setPick({ file: f, index: 'now' })}
                 onMouseEnter={() => setPeek(key(f.path, 'now'))}
                 onFocus={() => setPeek(key(f.path, 'now'))}

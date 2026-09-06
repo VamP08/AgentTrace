@@ -95,7 +95,7 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
               <div className="rd-day" key={d.key}>
                 <div className="rd-day-h">{d.label}</div>
                 {d.sessions.map((s) => (
-                  <button className="rd-sess" key={s.id} onClick={() => onOpenSession(s.id)}>
+                  <button className="rd-sess" key={s.id} title={s.title} onClick={() => onOpenSession(s.id)}>
                     <span className="rd-time">{clock(s.updatedAt)}</span>
                     <span className="rd-t">{s.live && <span className="rd-live"><i className="dot pulse" />Live</span>}{s.title}</span>
                     <span className="rd-m">

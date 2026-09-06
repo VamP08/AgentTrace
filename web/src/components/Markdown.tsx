@@ -124,15 +124,20 @@ function tokenize(text: string): Block[] {
   return out;
 }
 
-// A code span is matched before a wikilink, so [[slug]] inside backticks stays literal; fenced
-// blocks never reach this function at all.
+// The code span is the first alternative, so anything inside backticks stays literal; fenced
+// blocks never reach this function at all. Bold is non-greedy and allows a * inside it, which is
+// what made a brief print its own ** markers. Italic requires a non-word character either side so
+// snake_case identifiers are left alone.
+const INLINE = /(`[^`]+`|\*\*[\s\S]+?\*\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[\[[^\]|]+\]\]|\[[^\]]+\]\([^)]+\))/g;
+
 function Inline({ text, onLink }: { text: string; onLink?: (slug: string) => void }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[\[[^\]|]+\]\]|\[[^\]]+\]\([^)]+\))/g);
+  const parts = text.split(INLINE);
   return (
     <>
       {parts.map((p, i) => {
-        if (p.startsWith('**')) return <b key={i}>{p.slice(2, -2)}</b>;
         if (p.startsWith('`')) return <code key={i}>{p.slice(1, -1)}</code>;
+        if (p.startsWith('**') && p.endsWith('**')) return <b key={i}>{p.slice(2, -2)}</b>;
+        if (p.length > 2 && p.startsWith('_') && p.endsWith('_')) return <i key={i}>{p.slice(1, -1)}</i>;
         if (p.startsWith('[[') && p.endsWith(']]')) {
           const slug = p.slice(2, -2);
           const label = slug.replace(/-/g, ' ');

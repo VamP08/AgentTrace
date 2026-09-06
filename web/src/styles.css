@@ -315,7 +315,9 @@ a:hover { color: var(--ink-2); }
 .ver { flex: none; font-family: var(--font-mono); font-size: 12px; height: 22px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--hairline-strong); border-radius: var(--r-s); color: var(--ink-2); background: var(--surface); font-variant-numeric: tabular-nums; }
 .ver:hover { background: var(--hover); color: var(--ink); }
 .ver.sel { color: var(--ink); background: var(--accent-soft); box-shadow: inset 1px 0 0 var(--accent); }
-.ver.now { border-style: dashed; }
+/* not ".now": that is the Now panel's selector, and a chip carrying it inherited a 24px margin
+   and 16px of padding from a rule meant for a whole region */
+.ver.current { border-style: dashed; }
 .ver small { color: var(--ink-3); font-family: var(--font-ui); }
 .ver.sel small { color: var(--ink-2); }
 /* the strip reads as a filmstrip: hover a version and its size shows before the diff loads */
@@ -341,6 +343,8 @@ pre.diff .add, pre.diff .del { color: var(--ink); display: inline-block; width: 
 .tree .node { position: relative; display: flex; gap: 10px; width: 100%; padding: 8px 16px; text-align: left; border-bottom: 1px solid var(--hairline); align-items: center; }
 .tree .node .p { flex: 1 1 auto; min-width: 0; }
 .tree .node .c { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* one width for the qualifier so it clips at the same x on every row, not at a ragged one */
+.tree .node .c:not(.state) { flex: 0 0 110px; }
 .tree .node .c.state { flex: none; }
 .tree .node.root { color: var(--ink-2); }
 .tree button.node:hover { background: var(--hover); }
@@ -353,17 +357,20 @@ pre.diff .add, pre.diff .del { color: var(--ink); display: inline-block; width: 
 /* who asked whom: the picked helper's chain back to the main session, drawn once */
 .tree .node.thread::before { content: ''; position: absolute; left: var(--cx); top: 0; bottom: 0; width: 1px; background: var(--accent); }
 .tree .node.chain::after { content: ''; position: absolute; left: var(--cx0); width: calc(var(--cx) - var(--cx0)); top: 50%; height: 1px; background: var(--accent); }
-.agentpane { display: flex; flex-direction: column; overflow: hidden; }
-.agent-stage { flex: 1; min-height: 200px; display: flex; flex-direction: column; }
+/* The pane is one scroller with the helper's own list sized inside it. Letting flex shrink these
+   three regions is what crushed the brief to a single clipped line on a phone, and the panel's
+   own overflow then hid the evidence, the toggle included. */
+.agentpane { display: flex; flex-direction: column; overflow-y: auto; }
+.agent-stage { flex: none; height: 55vh; min-height: 200px; display: flex; flex-direction: column; }
 .agent-stage > .scroll { flex: 1; min-height: 0; }
-.brief { margin: 12px 24px 0; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.brief { flex: none; margin: 12px 24px 0; border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); overflow: hidden; }
 .brief.report { margin-bottom: 12px; }
 .brief.report.err .brief-h { color: var(--danger); }
 .brief-h { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--hairline); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
 .brief-h .c { font-weight: 400; letter-spacing: 0; text-transform: none; }
 /* the brief is prose someone wrote, not machine output: it is read, not inspected. The height is
    a whole number of lines so the fold never lands through a row of glyphs. */
-.briefbody { padding: 10px 12px; font-size: 15px; line-height: 1.65; max-height: 16.5em; overflow: hidden; }
+.briefbody { padding: 10px 12px; font-size: 15px; line-height: 1.65; max-height: 16.5em; overflow: hidden; overflow-wrap: anywhere; }
 .briefbody.all { max-height: none; }
 .briefbody p, .briefbody li { margin: 0 0 10px; font-size: 15px; line-height: 1.65; }
 .briefbody ul, .briefbody ol { margin: 0 0 10px; padding-left: 22px; }
@@ -556,8 +563,11 @@ button.ctx-line.day:hover { background: var(--hover); }
   .chapter .c:not(.state):not(.fail) { display: none; }
   .now { margin: 12px 14px 8px; }
   .stack { padding: 8px 14px; }
-  .split { grid-template-columns: 1fr; }
-  .files { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--hairline); }
+  /* one scroller on a phone: the list runs at its natural height and the detail follows it in
+     the page scroll, instead of a 270px box scrolling inside another box */
+  .split { grid-template-columns: 1fr; overflow-y: auto; }
+  .files { max-height: none; overflow: visible; border-right: 0; border-bottom: 1px solid var(--hairline); }
+  .diffpane, .agentpane { overflow: visible; }
   .ctx-table { padding: 0 8px 40px; }
   .ctx-head, .ctx-line { grid-template-columns: 28px minmax(0, 1fr) 110px 90px; }
   .ctx-head span:last-child, .ctx-line .c { display: none; }
@@ -567,6 +577,8 @@ button.ctx-line.day:hover { background: var(--hover); }
   .prow { grid-template-columns: 44px minmax(0, 1fr); }
   .twist { height: 44px; }
   .jump { height: 44px; padding: 0 12px; }
+  .brief { margin-left: 14px; margin-right: 14px; }
+  .agent-stage { height: 50vh; }
   .explainer { padding: 16px 14px 8px; }
   .lesson { padding: 16px 14px 60px; }
   .doc { padding: 16px 14px 60px; }

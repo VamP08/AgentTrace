@@ -303,11 +303,20 @@ button.rd-step:hover { color: var(--ink); }
 
 /* ---------- Learn: the lesson ---------- */
 .rd-lesson { padding: 22px 32px 80px; }
+/* The contents column is only affordable when the body still gets its full measure beside it:
+   at 1440 the pane is ~684px, and 180px of contents plus the gap leaves the code window at ~470px
+   with every long line cut. So the column exists from 1500px up and collapses to a row above the
+   lesson below that — the body keeps the measure at every width, and the code keeps its width. */
 .rd-lesson-grid {
   display: grid;
-  grid-template-columns: minmax(0, var(--measure)) 180px;
+  grid-template-columns: minmax(0, var(--measure));
   gap: 32px;
   align-items: start;
+}
+@media (min-width: 1500px) {
+  .rd-lesson-grid { grid-template-columns: minmax(0, var(--measure)) 180px; }
+  .rd-lesson-grid > .rd-toc { grid-column: 2; grid-row: 1; }
+  .rd-lesson-grid > .rd-body { grid-column: 1; grid-row: 1; }
 }
 /* a jump from the table of contents lands with the heading clear of the top edge */
 .rd-body section {
@@ -367,26 +376,26 @@ p.rd-a,
   padding-top: 16px;
   border-top: 1px solid var(--hairline);
 }
-.rd-check {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.rd-check input {
-  accent-color: var(--accent);
-  width: 16px;
-  height: 16px;
-}
+/* collapsed: a row of Bare controls above the lesson. From 1500px up it becomes the column. */
 .rd-toc {
-  position: sticky;
-  top: 16px;
-  display: grid;
-  gap: 6px;
-  padding-left: 12px;
-  border-left: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--hairline);
   font-size: 12px;
+}
+@media (min-width: 1500px) {
+  .rd-toc {
+    position: sticky;
+    top: 16px;
+    display: grid;
+    gap: 6px;
+    padding: 0 0 0 12px;
+    border-bottom: 0;
+    border-left: 1px solid var(--hairline);
+  }
 }
 .rd-toc .rd-toc-h {
   color: var(--ink-3);
@@ -553,11 +562,9 @@ p.rd-a,
 .rd-note:empty { margin: 0; line-height: 0; }
 
 /* ---------- narrow ---------- */
-@media (max-width: 1100px) {
-  .rd-lesson-grid { grid-template-columns: minmax(0, 1fr); }
-  .rd-toc { display: none; }
-}
 @media (max-width: 900px) {
+  /* a wrapped row of nine section links at a 44px touch height would own the first screen */
+  .rd-toc { display: none; }
   .rd-read { padding: 16px 14px 56px; }
   .rd-lesson { padding: 16px 14px 64px; }
   .rd-region { padding: 18px 14px 22px; }

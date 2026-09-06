@@ -295,6 +295,19 @@ function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext }
       )}
 
       <div className="rd-lesson-grid">
+        {/* first in the source, so the collapsed row above the lesson reads in the order it looks */}
+        <nav className="rd-toc" aria-label="On this page">
+          <span className="rd-toc-h">On this page</span>
+          {toc.map((t) => (
+            <button
+              key={t}
+              aria-current={here === `sec-${slugify(t)}` ? 'location' : undefined}
+              onClick={() => jumpTo(`sec-${slugify(t)}`)}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
         <div className="rd-body">
           {entry.files[0] && (
             <section id="sec-in-this-project">
@@ -341,22 +354,12 @@ function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext }
             </section>
           )}
           <div className="rd-end">
-            <label className="rd-check"><input type="checkbox" checked={isRead} onChange={(e) => onRead(e.target.checked)} /> Mark as read</label>
+            <button className={`btn ${isRead ? 'on' : ''}`} aria-pressed={isRead} onClick={() => onRead(!isRead)}>
+              {isRead ? 'Read' : 'Mark as read'}
+            </button>
             <button className="btn primary" onClick={onNext}>Next lesson</button>
           </div>
         </div>
-        <nav className="rd-toc" aria-label="On this page">
-          <span className="rd-toc-h">On this page</span>
-          {toc.map((t) => (
-            <button
-              key={t}
-              aria-current={here === `sec-${slugify(t)}` ? 'location' : undefined}
-              onClick={() => jumpTo(`sec-${slugify(t)}`)}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
       </div>
     </article>
   );
