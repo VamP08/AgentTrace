@@ -48,7 +48,7 @@ function loadMermaid() {
   if (!mermaidReady) {
     mermaidReady = import('mermaid').then((m) => {
       const dark = document.documentElement.dataset.theme !== 'light';
-      m.default.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'strict', fontFamily: 'Geist, system-ui, sans-serif' });
+      m.default.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'strict', fontFamily: "'Archivo Variable', system-ui, sans-serif" });
       return m.default;
     });
   }
@@ -71,16 +71,17 @@ export function Diagram({ source }: { source: string }) {
   return <div className="diagram" ref={ref} role="img" aria-label="Diagram" />;
 }
 
-export function Markdown({ text }: { text: string }) {
+/** `onLink` is called with the slug inside a [[wikilink]]. Without it the link is plain words. */
+export function Markdown({ text, onLink }: { text: string; onLink?: (slug: string) => void }) {
   const blocks = tokenize(text);
   return (
     <>
       {blocks.map((b, i) => {
         if (b.kind === 'fence') return b.lang === 'mermaid' ? <Diagram key={i} source={b.body} /> : <Code key={i} code={b.body} language={b.lang} />;
         if (b.kind === 'heading') return <h4 key={i}>{b.body}</h4>;
-        if (b.kind === 'ul') return <ul key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ul>;
-        if (b.kind === 'ol') return <ol key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} /></li>)}</ol>;
-        return <p key={i}><Inline text={b.body} /></p>;
+        if (b.kind === 'ul') return <ul key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} onLink={onLink} /></li>)}</ul>;
+        if (b.kind === 'ol') return <ol key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} onLink={onLink} /></li>)}</ol>;
+        return <p key={i}><Inline text={b.body} onLink={onLink} /></p>;
       })}
     </>
   );
@@ -123,13 +124,21 @@ function tokenize(text: string): Block[] {
   return out;
 }
 
-function Inline({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
+// A code span is matched before a wikilink, so [[slug]] inside backticks stays literal; fenced
+// blocks never reach this function at all.
+function Inline({ text, onLink }: { text: string; onLink?: (slug: string) => void }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[\[[^\]|]+\]\]|\[[^\]]+\]\([^)]+\))/g);
   return (
     <>
       {parts.map((p, i) => {
         if (p.startsWith('**')) return <b key={i}>{p.slice(2, -2)}</b>;
         if (p.startsWith('`')) return <code key={i}>{p.slice(1, -1)}</code>;
+        if (p.startsWith('[[') && p.endsWith(']]')) {
+          const slug = p.slice(2, -2);
+          const label = slug.replace(/-/g, ' ');
+          if (!onLink) return <span key={i}>{label}</span>;
+          return <button key={i} className="wikilink" onClick={() => onLink(slug)}>{label}</button>;
+        }
         const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(p);
         if (m && /^https?:\/\//.test(m[2])) return <a key={i} href={m[2]} target="_blank" rel="noreferrer">{m[1]}</a>;
         return <span key={i}>{p}</span>;

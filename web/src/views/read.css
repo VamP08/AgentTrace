@@ -1,0 +1,600 @@
+/* Learn, Project and Setup.
+   Two of these are Read surfaces — the visitor is here to understand, not to act — so they get the
+   reading measure, the 15px body and the vertical rhythm the rest of the app is not allowed.
+   Project is the picker in between: titled regions, ledger rows, nothing raised.
+
+   Every colour, radius and face here comes from a token in styles.css; nothing declares its own.
+   Class names are prefixed rd- so this file can never collide with the shared sheet.
+   Sizes are the six-step scale only: 11 / 12 / 13 / 15 / 19 / 25. */
+
+/* ---------- the reading surface: 15px/1.65 at --measure ---------- */
+.rd-read {
+  padding: 22px 28px 64px;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.rd-read h2 {
+  font-size: 25px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 8px;
+  max-width: 34ch;
+  text-wrap: pretty;
+}
+.rd-read h3 {
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 30px 0 8px;
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+.rd-read h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 20px 0 6px;
+}
+.rd-read p,
+.rd-read ul,
+.rd-read ol {
+  margin: 0 0 14px;
+  max-width: var(--measure);
+}
+.rd-read ul,
+.rd-read ol { padding-left: 22px; }
+.rd-read li { margin-bottom: 6px; }
+.rd-read b { color: var(--ink); font-weight: 600; }
+.rd-read code { font-size: 13px; color: var(--ink); }
+/* links carry their meaning in the underline, not in colour — a [[wikilink]] is a button in
+   the middle of a sentence and has to sit on the same baseline and read the same way */
+.rd-read a,
+.rd-read .wikilink {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hairline-strong);
+  text-underline-offset: 3px;
+}
+.rd-read a:hover,
+.rd-read .wikilink:hover { text-decoration-color: var(--ink-3); }
+.rd-read .wikilink {
+  display: inline;
+  vertical-align: baseline;
+  text-align: left;
+}
+.rd-read pre.code {
+  margin: 0 0 14px;
+  max-width: var(--measure);
+  background: var(--raised);
+}
+.rd-read .diagram {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r);
+  background: var(--surface);
+  max-width: var(--measure);
+  overflow-x: auto;
+}
+.rd-read .diagram svg { max-width: 100%; height: auto; }
+p.rd-lead {
+  font-size: 15px;
+  color: var(--ink-2);
+  margin: 0 0 18px;
+  max-width: var(--measure);
+}
+/* the pills-and-figures line. It sits under the title, never above it: a row of chrome above a
+   heading is an eyebrow, and the heading carries its own weight. */
+.rd-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.rd-meta-under { margin: 0 0 16px; }
+.rd-c {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rd-path {
+  min-width: 0;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* a failure the reader has to read, on a surface rather than in a coloured panel */
+.rd-alert,
+p.rd-alert {
+  margin: 12px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: var(--measure);
+}
+.rd-alert code { color: var(--danger); }
+/* the same failure, standing in a reading column rather than in a rail */
+p.rd-alert { margin: 12px 0; }
+
+/* an empty or error state on a Read surface: one 19px line, then 15px prose */
+.rd-empty {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  max-width: var(--measure);
+}
+.rd-empty h3 {
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0 0 8px;
+  text-wrap: pretty;
+}
+.rd-empty code { font-size: 13px; color: var(--ink); }
+/* the reading pane beside a rail */
+.rd-pane { overflow: auto; min-height: 0; }
+/* The list column takes the shared list width — 420px from 1280px up, 340px below — so its chips
+   and counts stop wrapping; the prose beside it still stops at the measure, padding included.
+   Below 900px the sheet's own single-column rule takes over, so this starts above it. */
+@media (min-width: 901px) {
+  .rd-split { grid-template-columns: var(--rail-list) minmax(0, 1fr); }
+  .rd-pane > .rd-read:not(.rd-lesson) { max-width: calc(var(--measure) + 56px); }
+}
+
+/* ---------- rail density: 30px rows, 13/12, 16px gutter ---------- */
+.rd-rail { display: flex; flex-direction: column; }
+.rd-rail-h {
+  padding: 12px 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rd-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px 10px;
+  width: 100%;
+  padding: 7px 16px;
+  text-align: left;
+  align-items: baseline;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink);
+}
+/* a numbered row: the lesson list, where the order is the course */
+.rd-entry.rd-num { grid-template-columns: 22px minmax(0, 1fr); }
+.rd-entry.rd-num .rd-t,
+.rd-entry.rd-num .rd-m { grid-column: 2; }
+.rd-entry .rd-n {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+/* a grid item's min-width is auto, so a long title pushes past its column unless told otherwise */
+.rd-t {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rd-entry .rd-m {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rd-entry:hover { background: var(--hover); }
+.rd-entry.sel {
+  background: var(--accent-soft);
+  box-shadow: inset 1px 0 0 var(--accent);
+}
+/* --ink-3 does not clear 4.5:1 on --accent-soft in the light theme; a selected row promotes it */
+.rd-entry.sel .rd-m { color: var(--ink-2); }
+.rd-entry.read .rd-t { color: var(--ink-2); }
+.rd-entry[disabled] { color: var(--ink-3); cursor: default; }
+.rd-entry[disabled]:hover { background: none; }
+
+/* ---------- Learn: rail head ---------- */
+.rd-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 6px;
+  flex-wrap: wrap;
+}
+.rd-progress {
+  display: grid;
+  gap: 6px;
+  padding: 4px 16px 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.rd-progress i {
+  display: block;
+  height: 4px;
+  background: var(--raised);
+  border-radius: 0;
+  overflow: hidden;
+}
+.rd-progress b { display: block; height: 100%; background: var(--ink-2); }
+.rd-filter {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--hairline);
+}
+.rd-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+button.rd-chip:hover { background: var(--hover); color: var(--ink); }
+.rd-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.rd-chip[disabled] {
+  color: var(--ink-3);
+  background: none;
+  cursor: default;
+}
+.rd-chip[disabled]:hover { background: none; color: var(--ink-3); }
+
+/* ---------- Learn: the prerequisite chain ---------- */
+.rd-chain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.rd-chain-lab {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.rd-step {
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 2px 0;
+  text-align: left;
+}
+button.rd-step:hover { color: var(--ink); }
+.rd-step[aria-current] {
+  color: var(--ink);
+  font-weight: 500;
+}
+/* drawn, not typed: the same chevron the rest of the app uses, turned to point along the chain */
+.rd-chain-sep {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid var(--ink-3);
+  border-bottom: 1px solid var(--ink-3);
+  transform: rotate(-45deg);
+  flex: none;
+}
+
+/* ---------- Learn: the lesson ---------- */
+.rd-lesson { padding: 22px 32px 80px; }
+.rd-lesson-grid {
+  display: grid;
+  grid-template-columns: minmax(0, var(--measure)) 180px;
+  gap: 32px;
+  align-items: start;
+}
+/* a jump from the table of contents lands with the heading clear of the top edge */
+.rd-body section {
+  margin-top: 26px;
+  scroll-margin-top: 24px;
+}
+.rd-body section h3 { scroll-margin-top: 24px; }
+.rd-body section:first-child { margin-top: 0; }
+.rd-body h3 {
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+.rd-codehead {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.rd-quiz {
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r);
+  background: var(--surface);
+  margin-bottom: 10px;
+  max-width: var(--measure);
+}
+p.rd-q {
+  color: var(--ink);
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+p.rd-a,
+.rd-a {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r);
+  background: var(--raised);
+  color: var(--ink);
+  max-width: var(--measure);
+}
+.rd-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 14px 0;
+}
+.rd-end {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 30px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.rd-check {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.rd-check input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.rd-toc {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--hairline);
+  font-size: 12px;
+}
+.rd-toc .rd-toc-h {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.rd-toc button {
+  color: var(--ink-3);
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.rd-toc button:hover { color: var(--ink); }
+/* the section the reader is in; a colour step, no motion, and the attribute says it too */
+.rd-toc button[aria-current] { color: var(--ink); font-weight: 500; }
+
+/* ---------- Project: titled regions on the ground, no cards ---------- */
+.rd-regions { padding-bottom: 48px; }
+.rd-region { padding: 22px 28px 26px; }
+.rd-region + .rd-region { border-top: 1px solid var(--hairline); }
+.rd-region-h {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 12px;
+}
+.rd-region p {
+  margin: 0 0 12px;
+  max-width: var(--measure);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.rd-region p:last-child { margin-bottom: 0; }
+.rd-region code { font-size: 13px; color: var(--ink); }
+.rd-figs {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.rd-fig {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rd-fig b {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rd-fig span {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.rd-fig.fail b { color: var(--danger); }
+
+/* ---------- Project: the session list as a strip of days ---------- */
+.rd-day + .rd-day { margin-top: 18px; }
+.rd-day-h {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.rd-sess {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px 6px 0;
+  text-align: left;
+  align-items: baseline;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink);
+}
+.rd-sess:hover { background: var(--hover); }
+.rd-sess .rd-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.rd-sess .rd-m {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rd-live {
+  color: var(--live);
+  font-weight: 500;
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+/* ---------- Setup ---------- */
+.rd-setup h3 {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rd-setup .rd-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.rd-cmd { position: relative; max-width: var(--measure); }
+/* the copy control sits in reserved space, never over the command */
+.rd-cmd pre.code { padding-right: 76px; }
+.rd-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.rd-copied { color: var(--success); }
+.rd-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.rd-cap label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rd-cap input[type='number'] {
+  width: 84px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r);
+  background: var(--ground);
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+/* the border darkens on focus, and the ring from the shared sheet is left alone to do its job */
+.rd-cap input[type='number']:focus { border-color: var(--accent); }
+.rd-cap input:disabled { color: var(--ink-3); }
+.rd-note {
+  color: var(--ink-3);
+  font-size: 12px;
+  max-width: var(--measure);
+  font-variant-numeric: tabular-nums;
+}
+/* the note stays in the page so a screen reader announces it, but takes no room until it speaks */
+.rd-note:empty { margin: 0; line-height: 0; }
+
+/* ---------- narrow ---------- */
+@media (max-width: 1100px) {
+  .rd-lesson-grid { grid-template-columns: minmax(0, 1fr); }
+  .rd-toc { display: none; }
+}
+@media (max-width: 900px) {
+  .rd-read { padding: 16px 14px 56px; }
+  .rd-lesson { padding: 16px 14px 64px; }
+  .rd-region { padding: 18px 14px 22px; }
+  /* touch targets */
+  .rd-entry,
+  .rd-sess {
+    min-height: 44px;
+    align-items: center;
+  }
+  .rd-chip,
+  .rd-copy,
+  .rd-tabs .btn,
+  .rd-row .btn,
+  .rd-end .btn,
+  .rd-cap .btn,
+  .rd-read .btn {
+    height: auto;
+    min-height: 44px;
+  }
+  .rd-step,
+  .rd-toc button { min-height: 44px; }
+  .rd-cap input[type='number'] { height: 44px; }
+  .rd-copy { position: static; margin-top: 6px; }
+  .rd-cmd pre.code { padding-right: 12px; }
+  /* the meta drops under the title rather than squeezing it off the row */
+  .rd-sess {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 2px 10px;
+    align-items: baseline;
+    padding: 8px 0;
+  }
+  .rd-sess .rd-m {
+    grid-column: 2;
+    white-space: normal;
+  }
+}
+
+/* No rule in this file animates or transitions anything: hover and selection are instant ground
+   changes and the copy control swaps a word. There is nothing here for prefers-reduced-motion to
+   suppress, and nothing may be added without one. */

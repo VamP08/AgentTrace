@@ -1,9 +1,10 @@
 // The record as a course. One lesson per concept: the reader's own code first, then the idea
 // as a picture, the mechanism in steps, questions to commit to before revealing, and one
 // exercise with a hint and a solution. Progress is a per-browser "read" mark, nothing more.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { CodeWindow, LearningEntry, ProjectRecord } from '@agenttrace/shared';
 import { Markdown, Code } from '../components/Markdown';
+import './read.css';
 
 interface Props {
   /** the record endpoint for this repository, e.g. /api/projects/<id>/record */
@@ -14,6 +15,7 @@ interface Props {
 
 const TYPES: LearningEntry['type'][] = ['library', 'tool', 'pattern', 'algorithm', 'math', 'architecture', 'design', 'security', 'testing', 'term'];
 const SECTION_ORDER = ['In this project', 'What it is', 'Why here', 'The idea in one picture', 'How it works', 'Where to look', 'Check yourself', 'Try it', 'Go deeper'];
+const DOCS = ['roadmap', 'stack', 'architecture', 'design', 'gaps'] as const;
 
 function readKey(project: string) {
   return `agenttrace-read:${project}`;
@@ -62,6 +64,12 @@ export function Learn({ base, cwd }: Props) {
     try { localStorage.setItem(readKey(record.project), JSON.stringify([...next])); } catch { /* per-browser convenience only */ }
   };
 
+  /** A [[slug]] in record text, or a chip: open that lesson, or that decision, or stay put. */
+  const openSlug = (slug: string) => {
+    if (record?.learning.some((l) => l.slug === slug)) { setTab('learning'); setPick(slug); }
+    else if (record?.decisions.some((d) => d.slug === slug)) { setTab('decisions'); setPick(`d:${slug}`); }
+  };
+
   const goNext = () => {
     if (!entry) return;
     markRead(entry.slug, true);
@@ -70,10 +78,10 @@ export function Learn({ base, cwd }: Props) {
     if (next) setPick(next.slug);
   };
 
-  if (record === undefined) return <div className="empty" aria-busy="true">Reading the record…</div>;
+  if (record === undefined) return <div className="empty rd-empty" aria-busy="true">Reading the record…</div>;
   if (record === null) {
     return (
-      <div className="empty">
+      <div className="empty rd-empty">
         <h3>No record for this project yet.</h3>
         The Learn view reads a folder of lessons the coding tool keeps while it builds this repository. No
         <code> agenttrace.json </code> was found at <code>{cwd}</code>. Open Setup in the sidebar for the two files that turn
@@ -83,107 +91,114 @@ export function Learn({ base, cwd }: Props) {
   }
 
   const readCount = ordered.filter((l) => read.has(l.slug)).length;
+  const docCount = DOCS.filter((k) => record[k]).length;
+  const tabs = {
+    learning: `Lessons ${record.learning.length}`,
+    decisions: `Decisions ${record.decisions.length}`,
+    journal: `Journal ${record.journal.length}`,
+    docs: `Documents ${docCount}`,
+  };
 
   return (
-    <div className="split learn">
-      <aside className="files">
-        <div className="learn-tabs">
+    <div className="split rd-split">
+      <aside className="files rd-rail">
+        <div className="rd-tabs">
           {(['learning', 'decisions', 'journal', 'docs'] as const).map((t) => (
-            <button key={t} className={`btn sm quiet ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
-              {t === 'learning' ? `Lessons ${record.learning.length}` : t === 'decisions' ? `Decisions ${record.decisions.length}` : t === 'journal' ? `Journal ${record.journal.length}` : 'Documents'}
+            <button key={t} className={`btn sm ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
+              {tabs[t]}
             </button>
           ))}
         </div>
         {tab === 'learning' && (
           <>
-            <div className="progress" aria-label="Lessons read">
+            <div className="rd-progress" aria-label="Lessons read">
               <span>{readCount} of {ordered.length} read</span>
               <i><b style={{ width: `${ordered.length ? (readCount / ordered.length) * 100 : 0}%` }} /></i>
             </div>
-            <div className="learn-filter">
-              <button className={`chip ${type === 'all' ? 'on' : ''}`} onClick={() => setType('all')}>all</button>
+            <div className="rd-filter">
+              <button className={`rd-chip ${type === 'all' ? 'on' : ''}`} aria-pressed={type === 'all'} onClick={() => setType('all')}>all</button>
               {TYPES.filter((t) => counts[t]).map((t) => (
-                <button key={t} className={`chip ${type === t ? 'on' : ''}`} onClick={() => setType(t)}>{t} {counts[t]}</button>
+                <button key={t} className={`rd-chip ${type === t ? 'on' : ''}`} aria-pressed={type === t} onClick={() => setType(t)}>{t} {counts[t]}</button>
               ))}
             </div>
             {entries.map((l, i) => (
-              <button key={l.slug} className={`node entry ${pick === l.slug ? 'sel' : ''} ${read.has(l.slug) ? 'read' : ''}`} onClick={() => setPick(l.slug)}>
-                <span className="n">{read.has(l.slug) ? '✓' : i + 1}</span>
-                <span className="p">{l.title}</span>
-                <span className="c">{l.type} · {l.level} · {minutes(l)} min</span>
+              <button key={l.slug} className={`node rd-entry rd-num ${pick === l.slug ? 'sel' : ''} ${read.has(l.slug) ? 'read' : ''}`} onClick={() => setPick(l.slug)}>
+                <span className="rd-n">{i + 1}</span>
+                <span className="rd-t">{l.title}</span>
+                <span className="rd-m">{l.type} · {l.level} · {minutes(l)} min{read.has(l.slug) ? ' · read' : ''}</span>
               </button>
             ))}
           </>
         )}
         {tab === 'decisions' &&
           record.decisions.map((d) => (
-            <button key={d.slug} className={`node entry ${pick === `d:${d.slug}` ? 'sel' : ''}`} onClick={() => setPick(`d:${d.slug}`)}>
-              <span className="p">{d.title}</span>
-              <span className="c">{d.status} · {d.date.slice(0, 10)}</span>
+            <button key={d.slug} className={`node rd-entry ${pick === `d:${d.slug}` ? 'sel' : ''}`} onClick={() => setPick(`d:${d.slug}`)}>
+              <span className="rd-t">{d.title}</span>
+              <span className="rd-m">{d.status} · {d.date.slice(0, 10)}</span>
             </button>
           ))}
         {tab === 'journal' &&
           record.journal.map((j) => (
-            <button key={j.slug} className={`node entry ${pick === `j:${j.slug}` ? 'sel' : ''}`} onClick={() => setPick(`j:${j.slug}`)}>
-              <span className="p">{j.summary || j.slug}</span>
-              <span className="c">{j.date}{j.milestone ? ` · ${j.milestone}` : ''}</span>
+            <button key={j.slug} className={`node rd-entry ${pick === `j:${j.slug}` ? 'sel' : ''}`} onClick={() => setPick(`j:${j.slug}`)}>
+              <span className="rd-t">{j.summary || j.slug}</span>
+              <span className="rd-m">{j.date}{j.milestone ? ` · ${j.milestone}` : ''}</span>
             </button>
           ))}
         {tab === 'docs' &&
-          (['roadmap', 'stack', 'architecture', 'design', 'gaps'] as const).map((k) => (
-            <button key={k} className={`node entry ${pick === `doc:${k}` ? 'sel' : ''}`} onClick={() => setPick(`doc:${k}`)} disabled={!record[k]}>
-              <span className="p">{k}.md</span>
-              <span className="c">{record[k] ? (record[k]!.updated ? String(record[k]!.updated).slice(0, 10) : 'present') : 'not written yet'}</span>
+          DOCS.map((k) => (
+            <button key={k} className={`node rd-entry ${pick === `doc:${k}` ? 'sel' : ''}`} onClick={() => setPick(`doc:${k}`)} disabled={!record[k]}>
+              <span className="rd-t">{k}.md</span>
+              <span className="rd-m">{record[k] ? (record[k]!.updated ? String(record[k]!.updated).slice(0, 10) : 'present') : 'not written yet'}</span>
             </button>
           ))}
         {record.unparsed.length > 0 && (
-          <div className="notice">{record.unparsed.length} file{record.unparsed.length > 1 ? 's' : ''} could not be parsed: {record.unparsed.map((u) => u.file).join(', ')}</div>
+          <div className="rd-alert">{record.unparsed.length} file{record.unparsed.length > 1 ? 's' : ''} could not be parsed: {record.unparsed.map((u) => u.file).join(', ')}</div>
         )}
       </aside>
 
-      <section className="diffpane learnpane">
+      <section className="rd-pane">
         {!pick && (
-          <div className="empty">
+          <div className="empty rd-empty">
             <h3>{record.project}: {record.learning.length} lessons, in the order they were needed.</h3>
             Each lesson opens on the lines of your own code where the idea lives, then explains it, then asks you two or three
             questions and gives you one thing to try. Lessons are ordered so that what a lesson needs comes before it.
             Start with the first unread one.
-            <div className="doc-files"><button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button></div>
+            <div className="rd-row"><button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button></div>
           </div>
         )}
         {entry && pick && !pick.includes(':') && (
-          <Lesson key={entry.slug} entry={entry} record={record} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={setPick} onNext={goNext} />
+          <Lesson key={entry.slug} entry={entry} record={record} ordered={ordered} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={openSlug} onNext={goNext} />
         )}
         {pick?.startsWith('d:') && (() => {
           const d = record.decisions.find((x) => `d:${x.slug}` === pick);
           return d ? (
-            <article className="doc">
-              <div className="doc-h"><span className={`pill ${d.status === 'accepted' ? 'ok' : ''}`}>{d.status}</span><span className="c">{d.date.slice(0, 10)}</span></div>
+            <article className="rd-read">
               <h2>{d.title}</h2>
-              <Markdown text={d.body} />
+              <div className="rd-meta rd-meta-under"><span className={`pill ${d.status === 'accepted' ? 'ok' : ''}`}>{d.status}</span><span className="rd-c">{d.date.slice(0, 10)}</span></div>
+              <Markdown text={d.body} onLink={openSlug} />
             </article>
           ) : null;
         })()}
         {pick?.startsWith('j:') && (() => {
           const j = record.journal.find((x) => `j:${x.slug}` === pick);
           return j ? (
-            <article className="doc">
-              <div className="doc-h"><span className="pill">{j.date}</span>{j.milestone && <span className="pill">{j.milestone}</span>}{j.reconstructed && <span className="pill" title={j.source ? `written from ${j.source}` : 'written after the fact'}>reconstructed</span>}{j.commits.length > 0 && <span className="c">commits {j.commits.join(', ')}</span>}</div>
+            <article className="rd-read">
               <h2>{j.summary}</h2>
-              <Markdown text={j.body} />
-              {j.learning.length > 0 && <div className="doc-files"><span className="c">Lessons from this session</span>{j.learning.map((n) => <button key={n} className="chip" onClick={() => { setTab('learning'); setPick(n); }}>{n}</button>)}</div>}
-              {j.next.length > 0 && <div className="doc-files"><span className="c">Next</span>{j.next.map((n) => <span key={n} className="chip">{n}</span>)}</div>}
+              <div className="rd-meta rd-meta-under"><span className="pill">{j.date}</span>{j.milestone && <span className="pill">{j.milestone}</span>}{j.reconstructed && <span className="pill" title={j.source ? `written from ${j.source}` : 'written after the fact'}>reconstructed</span>}{j.commits.length > 0 && <span className="rd-c">commits {j.commits.join(', ')}</span>}</div>
+              <Markdown text={j.body} onLink={openSlug} />
+              {j.learning.length > 0 && <div className="rd-row"><span className="rd-c">Lessons from this session</span>{j.learning.map((n) => <button key={n} className="rd-chip" onClick={() => openSlug(n)}>{n}</button>)}</div>}
+              {j.next.length > 0 && <div className="rd-row"><span className="rd-c">Next</span>{j.next.map((n) => <span key={n} className="rd-chip">{n}</span>)}</div>}
             </article>
           ) : null;
         })()}
         {pick?.startsWith('doc:') && (() => {
-          const k = pick.slice(4) as 'roadmap' | 'stack' | 'architecture' | 'design' | 'gaps';
+          const k = pick.slice(4) as (typeof DOCS)[number];
           const d = record[k];
           return d ? (
-            <article className="doc">
+            <article className="rd-read">
               <h2>{k}.md</h2>
               <Code code={JSON.stringify(d.data, null, 2)} language="json" />
-              <Markdown text={d.body} />
+              <Markdown text={d.body} onLink={openSlug} />
             </article>
           ) : null;
         })()}
@@ -192,7 +207,7 @@ export function Learn({ base, cwd }: Props) {
   );
 }
 
-function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; base: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
+function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; ordered: LearningEntry[]; base: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
   const [code, setCode] = useState<CodeWindow | null | undefined>();
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [hint, setHint] = useState(false);
@@ -211,39 +226,84 @@ function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry
   const sections = useMemo(() => splitSections(entry.body), [entry.body]);
   const missing = (entry.prerequisites ?? []).filter((p) => !record.learning.some((l) => l.slug === p));
   const toc = SECTION_ORDER.filter((s) => (s === 'In this project' ? !!entry.files[0] : s === 'Check yourself' ? entry.questions.length > 0 : s === 'Try it' ? !!entry.exercise : sections.some((x) => x.title === s)));
+  const chain = useMemo(() => chainTo(entry, ordered), [entry, ordered]);
+  const [here, setHere] = useState<string>();
+
+  // Which section the reader is in, for the table of contents. The observation band is a strip
+  // near the top of the pane, and the first section in it wins, so a long section stays current
+  // for as long as it is being read. `toc` is derived from `entry`, so that is the whole dep.
+  useEffect(() => {
+    const ids = toc.map((t) => `sec-${slugify(t)}`);
+    const els = ids.map((id) => document.getElementById(id)).filter((e): e is HTMLElement => !!e);
+    if (els.length === 0) return;
+    const inBand = new Set<string>();
+    const io = new IntersectionObserver(
+      (rs) => {
+        for (const r of rs) {
+          if (r.isIntersecting) inBand.add(r.target.id);
+          else inBand.delete(r.target.id);
+        }
+        const first = ids.find((id) => inBand.has(id));
+        if (first) setHere(first);
+      },
+      { rootMargin: '-8% 0px -72% 0px' },
+    );
+    els.forEach((e) => io.observe(e));
+    return () => io.disconnect();
+  }, [entry]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <article className="doc lesson" ref={top}>
-      <div className="doc-h">
+    <article className="rd-read rd-lesson" ref={top}>
+      <h2>{entry.title}</h2>
+      <div className="rd-meta rd-meta-under">
         <span className="pill">{entry.type}</span>
         <span className="pill">{entry.level}</span>
         {entry.reconstructed && <span className="pill" title={entry.source ? `written from ${entry.source}` : 'written after the fact'}>reconstructed</span>}
-        <span className="c">{minutes(entry)} min read · introduced {entry.date.slice(0, 10)}</span>
+        <span className="rd-c">{minutes(entry)} min read · introduced {entry.date.slice(0, 10)}</span>
       </div>
-      <h2>{entry.title}</h2>
-      <p className="lead">{entry.summary}</p>
+      <p className="rd-lead">{entry.summary}</p>
+
+      {chain.length > 1 && (
+        <nav className="rd-chain" aria-label="Prerequisite chain">
+          <span className="rd-chain-lab">Read in order</span>
+          {chain.map((l, i) => (
+            <Fragment key={l.slug}>
+              {i > 0 && <span className="rd-chain-sep" aria-hidden="true" />}
+              {l.slug === entry.slug ? (
+                <span className="rd-step" aria-current="step">{l.title}</span>
+              ) : (
+                <button className="rd-step" onClick={() => onPick(l.slug)}>{l.title}</button>
+              )}
+            </Fragment>
+          ))}
+        </nav>
+      )}
 
       {(entry.prerequisites.length > 0 || entry.related.length > 0) && (
-        <div className="doc-files path">
+        <div className="rd-row">
           {entry.prerequisites.map((p) => (
-            <button key={p} className="chip" disabled={missing.includes(p)} onClick={() => onPick(p)} title={missing.includes(p) ? 'Not written yet' : 'Read this first'}>read first: {titleOf(record, p)}</button>
+            <button key={p} className="rd-chip" disabled={missing.includes(p)} onClick={() => onPick(p)} title={missing.includes(p) ? 'Not written yet' : 'Read this first'}>
+              read first: {titleOf(record, p)}{missing.includes(p) ? ' · Not written yet' : ''}
+            </button>
           ))}
           {entry.related.map((p) => (
-            <button key={p} className="chip" disabled={!record.learning.some((l) => l.slug === p)} onClick={() => onPick(p)}>see also: {titleOf(record, p)}</button>
+            <button key={p} className="rd-chip" disabled={!record.learning.some((l) => l.slug === p)} onClick={() => onPick(p)}>
+              see also: {titleOf(record, p)}{record.learning.some((l) => l.slug === p) ? '' : ' · Not written yet'}
+            </button>
           ))}
         </div>
       )}
 
-      <div className="lesson-grid">
-        <div className="lesson-body">
+      <div className="rd-lesson-grid">
+        <div className="rd-body">
           {entry.files[0] && (
             <section id="sec-in-this-project">
               <h3>In this project</h3>
-              {code === undefined && <p className="c" aria-busy="true">Reading {entry.files[0]}…</p>}
-              {code === null && <p className="c">The file <code>{entry.files[0]}</code> is not in the project folder right now.</p>}
+              {code === undefined && <p className="rd-c" aria-busy="true">Reading {entry.files[0]}…</p>}
+              {code === null && <p className="rd-c">The file <code>{entry.files[0]}</code> is not in the project folder right now.</p>}
               {code && (
                 <>
-                  <div className="codehead"><code>{code.path}</code><span className="c">lines {code.start} to {code.start + code.lines.length - 1} of {code.totalLines}{code.anchorLine ? `, ${entry.anchor} on line ${code.anchorLine}` : ''}</span></div>
+                  <div className="rd-codehead"><code>{code.path}</code><span className="rd-c">lines {code.start} to {code.start + code.lines.length - 1} of {code.totalLines}{code.anchorLine ? `, ${entry.anchor} on line ${code.anchorLine}` : ''}</span></div>
                   <Code code={code.lines.join('\n')} language={code.language} start={code.start} highlight={code.anchorLine} />
                 </>
               )}
@@ -252,18 +312,18 @@ function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry
           {sections.map((s) => (
             <section key={s.title} id={`sec-${slugify(s.title)}`}>
               <h3>{s.title}</h3>
-              <Markdown text={s.body} />
+              <Markdown text={s.body} onLink={onPick} />
             </section>
           ))}
           {entry.questions.length > 0 && (
             <section id="sec-check-yourself">
               <h3>Check yourself</h3>
-              <p className="c">Decide on your answer before you reveal one.</p>
+              <p className="rd-c">Decide on your answer before you reveal one.</p>
               {entry.questions.map((q, i) => (
-                <div key={i} className="quiz">
-                  <p className="q">{q.q}</p>
-                  {!revealed[i] && <button className="btn sm" onClick={() => setRevealed({ ...revealed, [i]: true })}>Reveal the answer</button>}
-                  {revealed[i] && <p className="a">{q.a}</p>}
+                <div key={i} className="rd-quiz">
+                  <p className="rd-q">{q.q}</p>
+                  {!revealed[i] && <button className="btn sm quiet" onClick={() => setRevealed({ ...revealed, [i]: true })}>Reveal the answer</button>}
+                  {revealed[i] && <p className="rd-a">{q.a}</p>}
                 </div>
               ))}
             </section>
@@ -271,23 +331,31 @@ function Lesson({ entry, record, base, isRead, onRead, onPick, onNext }: { entry
           {entry.exercise && (
             <section id="sec-try-it">
               <h3>Try it</h3>
-              <Markdown text={entry.exercise.task} />
-              <div className="doc-files">
-                {entry.exercise.hint && !hint && <button className="btn sm" onClick={() => setHint(true)}>Show a hint</button>}
-                {entry.exercise.solution && !solution && <button className="btn sm" onClick={() => setSolution(true)}>Show the solution</button>}
+              <Markdown text={entry.exercise.task} onLink={onPick} />
+              <div className="rd-row">
+                {entry.exercise.hint && !hint && <button className="btn sm quiet" onClick={() => setHint(true)}>Show a hint</button>}
+                {entry.exercise.solution && !solution && <button className="btn sm quiet" onClick={() => setSolution(true)}>Show the solution</button>}
               </div>
-              {hint && entry.exercise.hint && <p className="a">{entry.exercise.hint}</p>}
+              {hint && entry.exercise.hint && <p className="rd-a">{entry.exercise.hint}</p>}
               {solution && entry.exercise.solution && <Code code={entry.exercise.solution.trim()} language={code?.language ?? 'javascript'} />}
             </section>
           )}
-          <div className="lesson-end">
-            <label className="check"><input type="checkbox" checked={isRead} onChange={(e) => onRead(e.target.checked)} /> Mark as read</label>
+          <div className="rd-end">
+            <label className="rd-check"><input type="checkbox" checked={isRead} onChange={(e) => onRead(e.target.checked)} /> Mark as read</label>
             <button className="btn primary" onClick={onNext}>Next lesson</button>
           </div>
         </div>
-        <nav className="toc" aria-label="On this page">
-          <span className="c">On this page</span>
-          {toc.map((t) => <button key={t} onClick={() => document.getElementById(`sec-${slugify(t)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>{t}</button>)}
+        <nav className="rd-toc" aria-label="On this page">
+          <span className="rd-toc-h">On this page</span>
+          {toc.map((t) => (
+            <button
+              key={t}
+              aria-current={here === `sec-${slugify(t)}` ? 'location' : undefined}
+              onClick={() => jumpTo(`sec-${slugify(t)}`)}
+            >
+              {t}
+            </button>
+          ))}
         </nav>
       </div>
     </article>
@@ -331,6 +399,25 @@ function orderByPrerequisites(list: LearningEntry[]): LearningEntry[] {
   return out;
 }
 
+/**
+ * The chain of lessons this one sits at the end of: walk back through the first prerequisite that
+ * was actually written, over the list `orderByPrerequisites` already put in reading order. A cycle
+ * or a prerequisite nobody wrote ends the walk; the result reads root first, this lesson last.
+ */
+function chainTo(entry: LearningEntry, ordered: LearningEntry[]): LearningEntry[] {
+  const byslug = new Map(ordered.map((l) => [l.slug, l]));
+  const seen = new Set<string>([entry.slug]);
+  const chain: LearningEntry[] = [entry];
+  let cur = entry;
+  for (;;) {
+    const prev = cur.prerequisites.map((p) => byslug.get(p)).find((l): l is LearningEntry => !!l && !seen.has(l.slug));
+    if (!prev) return chain;
+    seen.add(prev.slug);
+    chain.unshift(prev);
+    cur = prev;
+  }
+}
+
 function titleOf(record: ProjectRecord, slug: string): string {
   return record.learning.find((l) => l.slug === slug)?.title ?? slug;
 }
@@ -338,6 +425,12 @@ function minutes(l: LearningEntry): number {
   const words = l.body.split(/\s+/).length + l.questions.reduce((n, q) => n + q.q.split(/\s+/).length + q.a.split(/\s+/).length, 0);
   return Math.max(1, Math.round(words / 180));
 }
+/** Jump to a section of the lesson; the glide goes away for a reader who asked for less motion. */
+function jumpTo(id: string) {
+  const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+}
+
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }

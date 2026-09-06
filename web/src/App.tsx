@@ -37,7 +37,25 @@ export function App() {
   const [showOther, setShowOther] = useState(false);
   const [hooks, setHooks] = useState<any>();
   const [commits, setCommits] = useState<any[]>([]);
+  const [railOpen, setRailOpen] = useState(false);
+  // Three states, not two: before the first open nothing is wrong yet, and saying "offline" then
+  // is a lie the reader has no way to check.
+  const [link, setLink] = useState<'connecting' | 'open' | 'offline'>('connecting');
   const socket = useRef<ReturnType<typeof openSocket>>();
+  const railClose = useRef<HTMLButtonElement>(null);
+  // when the socket drops, the figures on screen are whatever arrived at this moment
+  const lastSeen = useRef<Date>();
+
+  // Under 900px the rail is an overlay. Opening it moves focus inside; Escape closes it.
+  useEffect(() => {
+    if (!railOpen) return;
+    railClose.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRailOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [railOpen]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -53,8 +71,15 @@ export function App() {
     load();
     const t = setInterval(load, 15000);
     socket.current = openSocket(
-      (msg) => dispatch({ type: 'server', msg }),
-      (open) => dispatch({ type: 'socket', open }),
+      (msg) => {
+        lastSeen.current = new Date();
+        dispatch({ type: 'server', msg });
+      },
+      (open) => {
+        // onState only fires on a real open or a real close, so nothing has failed until it does
+        setLink(open ? 'open' : 'offline');
+        dispatch({ type: 'socket', open });
+      },
     );
     return () => {
       clearInterval(t);
@@ -73,12 +98,14 @@ export function App() {
   const select = (id: string) => {
     setOpenProject(undefined);
     setSetup(false);
+    setRailOpen(false);
     dispatch({ type: 'select', id });
     socket.current?.subscribe(id);
   };
 
   const selectProject = (id: string) => {
     setSetup(false);
+    setRailOpen(false);
     setOpenProject(id);
     setOpened((o) => ({ ...o, [id]: true }));
   };
@@ -134,14 +161,19 @@ export function App() {
     return { output, cacheRead, calls, failed };
   }, [s.events]);
 
+  // Nothing has been found at all: the main pane owns that news, not a line in the rail.
+  const nothing = index.projects.length === 0 && index.misc.length === 0 && s.sessions.length === 0;
+
   return (
     <div className="app">
       <a className="skip" href="#main">Skip to the session</a>
-      <aside className="side" aria-label="Sessions">
+      {railOpen && <button className="scrim" aria-label="Close the session list" onClick={() => setRailOpen(false)} />}
+      <aside className={`side ${railOpen ? 'open' : ''}`} aria-label="Sessions">
         <div className="brand">
           <span className="mark" aria-hidden />
           <h1>AgentTrace</h1>
           <span className="sub">{s.sessions.length} sessions</span>
+          <button className="btn sm quiet close" ref={railClose} onClick={() => setRailOpen(false)}>Close</button>
         </div>
         <div className="search">
           <input
@@ -153,11 +185,6 @@ export function App() {
           />
         </div>
         <nav className="list">
-          {index.projects.length === 0 && s.sessions.length === 0 && (
-            <div className="empty small">
-              No transcripts found. The server reads <code>~/.claude/projects</code>; set <code>CLAUDE_CONFIG_DIR</code> if yours lives elsewhere.
-            </div>
-          )}
           {index.projects.length === 0 && index.misc.length === 0 && s.sessions.length > 0 && <div className="empty small">Building the project index…</div>}
           {github.length > 0 && <div className="ghead static">GitHub repositories<span className="n">{github.length}</span></div>}
           {github.map((p) => (
@@ -189,20 +216,34 @@ export function App() {
             </div>
           )}
         </nav>
-        <div className="foot">
-          <span><i className="dot" style={{ color: s.connected ? 'var(--ok)' : 'var(--fail)' }} />{s.connected ? 'Server connected' : 'Server offline'}</span>
-          <button className="btn sm quiet" onClick={() => setSetup(true)}>Setup</button>
+        <div className={`foot ${link === 'offline' ? 'offline' : ''}`} role={link === 'offline' ? 'status' : undefined}>
+          {link === 'connecting' ? (
+            <span>Connecting…</span>
+          ) : (
+            <span className="state"><i className="dot" style={{ color: link === 'open' ? 'var(--success)' : 'var(--danger)' }} />{link === 'open' ? 'Server connected' : 'Server offline'}</span>
+          )}
+          <button className="btn sm quiet" onClick={() => { setSetup(true); setRailOpen(false); }}>Setup</button>
           <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
             {theme === 'dark' ? 'Light theme' : 'Dark theme'}
           </button>
+          {link === 'offline' && <span className="said">{lastSeen.current ? `Showing the last data received at ${clock(lastSeen.current)}.` : 'No data has been received yet.'}</span>}
         </div>
       </aside>
 
       <main className="main" id="main" tabIndex={-1}>
+        <div className="railbar">
+          <button className="btn quiet" onClick={() => setRailOpen(true)} aria-expanded={railOpen}>Sessions</button>
+        </div>
         {setup ? (
           <Setup onClose={() => setSetup(false)} />
         ) : openProject ? (
           <Project id={openProject} onOpenSession={select} onOpenProject={selectProject} />
+        ) : nothing ? (
+          <div className="firstrun">
+            <h2>No transcripts found.</h2>
+            <p>The server reads <code>~/.claude/projects</code>. Nothing readable is there yet, so there is nothing to show.</p>
+            <p>Set <code>CLAUDE_CONFIG_DIR</code> if your transcripts live somewhere else, then reload.</p>
+          </div>
         ) : !current ? (
           <div className="empty">
             <h3>Choose a project.</h3>
@@ -219,9 +260,10 @@ export function App() {
               <div className="meta">
                 <span>Folder <b>{project(current)}</b></span>
                 <span>Started <b>{when(current.startedAt)}</b></span>
-                <span>Tool calls <b>{totals.calls}</b></span>
-                <span>Tokens out <b>{fmt(totals.output)}</b></span>
-                <span>Cache read <b>{fmt(totals.cacheRead)}</b></span>
+                {/* a zero here would read as "none", not as "not counted yet" */}
+                <span>Tool calls <b>{s.loading ? '…' : totals.calls}</b></span>
+                <span>Tokens out <b>{s.loading ? '…' : fmt(totals.output)}</b></span>
+                <span>Cache read <b>{s.loading ? '…' : fmt(totals.cacheRead)}</b></span>
                 <span>Transcript <b>{mb(current.bytes)}</b></span>
               </div>
               <div className="row2">
@@ -267,6 +309,9 @@ function fmt(n: number): string {
 }
 function mb(b: number): string {
   return b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`;
+}
+function clock(d: Date): string {
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 function when(iso: string): string {
   const d = new Date(iso);

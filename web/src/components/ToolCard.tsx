@@ -23,7 +23,7 @@ export function ToolCard({ call, result, agent, first, durationMs }: { call: Cal
         <span className="arg" title={headline(call.name, input)}>{headline(call.name, input)}</span>
         {durationMs !== undefined && <span className="dur" title="Wall time, from the hook log">{durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)} s` : `${durationMs} ms`}</span>}
         <span className={`st ${state}`}>{word}</span>
-        <button className={`why ${why ? 'on' : ''}`} onClick={() => setWhy(!why)} aria-pressed={why} aria-label="What this tool does" title="What this tool does">?</button>
+        <button className={`why ${why ? 'on' : ''}`} onClick={() => setWhy(!why)} aria-pressed={why} title="What this tool does">Why</button>
         <button className={`open ${open ? 'on' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Show input and result" title="Show input and result">
           <span className="chev" aria-hidden />
         </button>

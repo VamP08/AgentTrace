@@ -1,6 +1,6 @@
 // The session as turns. A turn is one of your prompts and everything the model did in answer.
 // The turn happening now is the page; the others are chapters with counts, folded until opened.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { AgentInfo, Event, ToolCallEvent, ToolResultEvent } from '@agenttrace/shared';
@@ -84,6 +84,8 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
   const [follow, setFollow] = useState(true);
   const [openTurns, setOpenTurns] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  // where the reader was when they scrolled away, so "n new" counts only what arrived since
+  const since = useRef(0);
 
   const turns = useMemo(() => buildTurns(events), [events]);
   const current = turns[turns.length - 1];
@@ -155,6 +157,24 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batches, follow, live]);
 
+  // Scrolling away from a live session stops the follow silently; this is what says so, and
+  // it names what clicking it will do rather than leaving the reader to infer a toggle's state.
+  const stopFollowing = () => {
+    if (!follow) return;
+    since.current = events.length;
+    setFollow(false);
+  };
+  const fresh = useMemo(() => {
+    if (follow) return 0;
+    let n = 0;
+    for (let i = since.current; i < events.length; i++) {
+      const k = events[i].kind;
+      if (k === 'user' || k === 'assistant_text' || k === 'tool_call') n++;
+    }
+    return n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, follow]);
+
   const slot = document.getElementById('view-tools');
 
   return (
@@ -165,13 +185,15 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
             <button className={`btn sm ${show.context ? 'on' : ''}`} onClick={() => setShow({ ...show, context: !show.context })} aria-pressed={show.context}>Context {counts.context}</button>
             <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>Raw records {counts.raw}</button>
             {parseErrors > 0 && <span className="pill fail">{parseErrors} unreadable lines</span>}
-            {live && (
-              <button className={`btn sm ${follow ? 'on' : ''}`} onClick={() => setFollow(!follow)} aria-pressed={follow}>{follow ? 'Following' : 'Follow'}</button>
+            {live && !follow && (
+              <button className="jump" onClick={() => { setFollow(true); virt.scrollToIndex(0, { align: 'start' }); }}>
+                Jump to now{fresh > 0 && <span className="k">· {fresh} new</span>}
+              </button>
             )}
           </>,
           slot,
         )}
-      <div className="scroll" ref={scrollRef} onWheel={() => follow && setFollow(false)} aria-busy={loading}>
+      <div className="scroll" ref={scrollRef} onWheel={stopFollowing} aria-busy={loading}>
         {loading && <div className="empty">Reading the transcript…</div>}
         {!loading && turns.length === 0 && (
           <div className="empty">
@@ -204,11 +226,11 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
       <section className="now idle" aria-label="Session summary">
         <div className="now-h">Session summary</div>
         <div className="now-grid">
-          <Stat n={turns.length} label={turns.length === 1 ? 'turn' : 'turns'} />
-          <Stat n={calls} label="tool calls" />
-          <Stat n={files.size} label="files changed" />
+          <Stat n={turns.length} label={one(turns.length, 'turn', 'turns')} />
+          <Stat n={calls} label={one(calls, 'tool call', 'tool calls')} />
+          <Stat n={files.size} label={one(files.size, 'file changed', 'files changed')} />
           <Stat n={failed} label="failed" tone={failed ? 'fail' : undefined} />
-          <Stat n={stack} label="technologies" />
+          <Stat n={stack} label={one(stack, 'technology', 'technologies')} />
           <Stat n={span(turns[0]?.startTs, turn.endTs)} label="elapsed" />
         </div>
         <p className="now-p">Open a turn below to read what the model did in answer to it. Files changed across the session are listed under Files.</p>
@@ -219,10 +241,10 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
   const g = call ? gloss(call.name) : undefined;
   return (
     <section className="now" aria-label="Now">
-      <div className="now-h">Now <span className={`pill ${state === 'Waiting for you' ? 'live' : state === 'Working' ? 'ok' : ''}`}>{state}</span></div>
+      <div className="now-h">Now <span className={`pill ${state === 'Working' ? 'ok' : state === 'Answered' ? '' : 'live'}`}>{state}</span></div>
       <div className="now-ask">
         <span className="who">You asked</span>
-        <p>{turn.prompt}</p>
+        <Prompt text={turn.prompt} />
       </div>
       {turn.lastModelText && (
         <div className="now-say">
@@ -240,12 +262,34 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
         </div>
       )}
       <div className="now-grid">
-        <Stat n={turn.calls} label="tool calls this turn" />
-        <Stat n={turn.files.size} label="files changed" />
+        <Stat n={turn.calls} label={one(turn.calls, 'tool call this turn', 'tool calls this turn')} />
+        <Stat n={turn.files.size} label={one(turn.files.size, 'file changed', 'files changed')} />
         <Stat n={turn.failed} label="failed" tone={turn.failed ? 'fail' : undefined} />
         <Stat n={span(turn.startTs, turn.endTs)} label="so far" />
       </div>
     </section>
+  );
+}
+
+/** Four lines of the prompt, then the rest on request. A four-thousand-character paste would
+ *  otherwise push the chapter list off the screen and the Now panel would stop being a panel. */
+function Prompt({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [open, setOpen] = useState(false);
+  const [over, setOver] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !open) setOver(el.scrollHeight > el.clientHeight + 1);
+  }, [text, open]);
+  return (
+    <div>
+      <p ref={ref} className={open ? '' : 'clamped'}>{text}</p>
+      {(over || open) && (
+        <button className="btn sm quiet" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? 'Show four lines' : 'Show the whole prompt'}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -288,7 +332,7 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
         <span className="c">{t.files.size} files</span>
         {t.failed > 0 && <span className="c fail">{t.failed} failed</span>}
         <span className="c">{span(t.startTs, t.endTs)}</span>
-        <span className={`c state ${state === 'Waiting for you' ? 'live' : state === 'Working' ? 'ok' : ''}`}>{state}</span>
+        <span className={`c state ${state === 'Working' ? 'ok' : state === 'Answered' ? '' : 'live'}`}>{state}</span>
         <span className="c time">{clock(t.startTs)}</span>
       </button>
     );
@@ -330,6 +374,8 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
       );
   }
 }
+
+const one = (n: number, single: string, many: string) => (n === 1 ? single : many);
 
 function argOf(call: ToolCallEvent): string {
   const i = (call.input ?? {}) as Record<string, any>;

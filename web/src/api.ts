@@ -7,6 +7,12 @@ export async function fetchSessions(): Promise<Session[]> {
   return r.json();
 }
 
+// The app wants exactly one live socket. `live` is the only one allowed to speak: any other
+// socket — a retry that lost the race, or the first of the two the effect opens in development —
+// stays silent, so a superseded socket closing can never report the connection as offline while
+// its replacement is already connecting or open.
+let live: WebSocket | undefined;
+
 export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open: boolean) => void) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   let ws: WebSocket | undefined;
@@ -14,13 +20,24 @@ export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open
   let closed = false;
 
   const connect = () => {
-    ws = new WebSocket(`${proto}://${location.host}/ws`);
-    ws.onopen = () => {
+    if (closed) return; // a retry timer that outlived close() must not claim `live` back
+    const sock = new WebSocket(`${proto}://${location.host}/ws`);
+    ws = sock;
+    live = sock;
+    sock.onopen = () => {
+      if (sock !== live) return sock.close();
       onState(true);
       if (wanted) send({ type: 'subscribe', sessionId: wanted });
     };
-    ws.onmessage = (e) => onMessage(JSON.parse(e.data));
-    ws.onclose = () => {
+    sock.onmessage = (e) => {
+      if (sock === live) onMessage(JSON.parse(e.data));
+    };
+    sock.onerror = () => {
+      if (sock === live) sock.close(); // onclose follows and does the reporting
+    };
+    sock.onclose = () => {
+      if (sock !== live) return;
+      live = undefined;
       onState(false);
       if (!closed) setTimeout(connect, 1000);
     };
@@ -36,9 +53,14 @@ export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open
     },
     close() {
       closed = true;
+      const sock = ws;
+      if (!sock) return;
+      // Giving up the claim first is what keeps this close quiet: the onclose below sees a socket
+      // that is no longer `live` and says nothing.
+      if (live === sock) live = undefined;
       // Closing a socket that is still connecting makes the browser log a warning; wait for open.
-      if (ws?.readyState === WebSocket.CONNECTING) ws.addEventListener('open', () => ws?.close());
-      else ws?.close();
+      if (sock.readyState === WebSocket.CONNECTING) sock.addEventListener('open', () => sock.close());
+      else sock.close();
     },
   };
 }
