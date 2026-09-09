@@ -3,10 +3,11 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
-import type { CodeWindow, Decision, JournalEntry, LearningEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
+import type { CodeWindow, Decision, JournalEntry, LearningEntry, LibraryEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
+import { readCannotFill, readLibrary, readSources, readVerified } from './library.js';
 
 /** Walk up from cwd looking for agenttrace.json; the record path inside may be relative to it. */
-export function findManifest(cwd: string): { manifest: ProjectManifest; root: string; repoDir: string } | undefined {
+export function findManifest(cwd: string): { manifest: ProjectManifest; root: string; repoDir: string; library?: string } | undefined {
   let dir = resolve(cwd);
   for (let i = 0; i < 6; i++) {
     const file = join(dir, 'agenttrace.json');
@@ -15,7 +16,10 @@ export function findManifest(cwd: string): { manifest: ProjectManifest; root: st
         const manifest = JSON.parse(readFileSync(file, 'utf8')) as ProjectManifest;
         if (typeof manifest.record !== 'string' || typeof manifest.project !== 'string') return undefined;
         const root = isAbsolute(manifest.record) ? manifest.record : resolve(dir, manifest.record);
-        return { manifest, root, repoDir: dir };
+        const library = typeof manifest.library === 'string' && manifest.library
+          ? (isAbsolute(manifest.library) ? manifest.library : resolve(dir, manifest.library))
+          : undefined;
+        return { manifest, root, repoDir: dir, library };
       } catch {
         return undefined;
       }
@@ -99,8 +103,10 @@ export function readRecord(cwd: string, touched: string[] = []): ProjectRecord |
 }
 
 /** Read a record whose location is already known: from a manifest, or from the registry once the repository folder is gone. */
-export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectManifest; root: string; repoDir: string }): ProjectRecord | undefined {
+export function readRecordAt({ manifest, root, repoDir, library }: { manifest: ProjectManifest; root: string; repoDir: string; library?: string }): ProjectRecord | undefined {
   const unparsed: ProjectRecord['unparsed'] = [];
+  const lib = library ? readLibrary(library) : { entries: [] as LibraryEntry[], unparsed: [] as ProjectRecord['unparsed'] };
+  for (const u of lib.unparsed) unparsed.push({ file: `library/${u.file}`, error: u.error });
   const learning = readFolder<LearningEntry>(root, 'learning', 'title', unparsed, (slug, d, body) => ({
     slug,
     title: str(d.title, slug),
@@ -117,8 +123,14 @@ export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectMan
     session: d.session ? String(d.session) : undefined,
     reconstructed: d.reconstructed === true ? true : undefined,
     source: d.source ? String(d.source) : undefined,
-    questions: Array.isArray(d.questions) ? d.questions.filter((x: any) => x && x.q).map((x: any) => ({ q: String(x.q), a: str(x.a) })) : [],
-    exercise: d.exercise && typeof d.exercise === 'object' && d.exercise.task ? { task: String(d.exercise.task), hint: d.exercise.hint ? String(d.exercise.hint) : undefined, solution: d.exercise.solution ? String(d.exercise.solution) : undefined } : undefined,
+    questions: Array.isArray(d.questions) ? d.questions.filter((x: any) => x && x.q).map((x: any) => ({ q: String(x.q), a: str(x.a), id: x.id ? String(x.id) : undefined, kind: ['recall', 'predict', 'apply', 'explain'].includes(x.kind) ? x.kind : undefined })) : [],
+    exercise: d.exercise && typeof d.exercise === 'object' && d.exercise.task ? { task: String(d.exercise.task), hint: d.exercise.hint ? String(d.exercise.hint) : undefined, solution: d.exercise.solution ? String(d.exercise.solution) : undefined, id: d.exercise.id ? String(d.exercise.id) : undefined } : undefined,
+    extends: d.extends ? String(d.extends) : undefined,
+    objectives: list(d.objectives),
+    sources: readSources(d.sources),
+    verified: readVerified(d.verified),
+    cannotFill: readCannotFill(d.cannot_fill ?? d.cannotFill),
+    unit: d.unit ? String(d.unit) : undefined,
     body,
   })).sort((a, b) => (a.date < b.date ? -1 : 1));
   const decisions = readFolder<Decision>(root, 'decisions', 'title', unparsed, (slug, d, body) => ({
@@ -160,6 +172,8 @@ export function readRecordAt({ manifest, root, repoDir }: { manifest: ProjectMan
     learning,
     decisions,
     journal,
+    library: lib.entries,
+    libraryRoot: library,
     unparsed,
   };
 }

@@ -1,1 +1,6 @@
-{ "contract": 1, "project": "AgentTrace", "record": "e:/Work/Live/code/Project/docs/AgentTrace" }
+{
+  "contract": 1,
+  "project": "AgentTrace",
+  "record": "e:/Work/Live/code/Project/docs/AgentTrace",
+  "library": "e:/Work/Live/code/Project/docs/library"
+}
