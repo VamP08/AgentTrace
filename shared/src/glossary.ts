@@ -34,6 +34,7 @@ export const TOOLS: Record<string, ToolGloss> = {
   ScheduleWakeup: { what: 'Sets a timer to come back and continue later.', look: 'The delay and the reason.' },
   Workflow: { what: 'Runs a script that coordinates several helpers at once.', look: 'The script: its phases name the plan.' },
   ReportFindings: { what: 'Reports the results of a code review as a list.', look: 'Each finding, most serious first.' },
+  TodoWrite: { what: 'Writes down the checklist it is working through, and ticks items off as it goes.', look: 'Which item just moved to in-progress or done; the list is how it is keeping its place.' },
 };
 
 export interface StackGloss {
@@ -118,11 +119,58 @@ export const STACK: Record<string, StackGloss> = {
   'python-dotenv': { category: 'other', what: 'Loads settings from a .env file.' },
 };
 
+/**
+ * Tools reached through an MCP server, keyed by the action name after the server prefix.
+ * G16: these were falling to a generated template naming the server and the action, which
+ * repeats the tool name rather than explaining it. On this machine the browser actions below
+ * are called about as often as Bash, so the reader who most needs a line was the one not
+ * getting one.
+ */
+const MCP_ACTIONS: Record<string, ToolGloss> = {
+  browser_navigate: { what: 'Opens a web address in a real browser the model is driving.', look: 'The URL.' },
+  browser_snapshot: { what: 'Reads the page as a list of its elements, the way a screen reader would, so the model can find things by name rather than by pixel.', look: 'The element the next step refers to.' },
+  browser_click: { what: 'Clicks something on the page.', look: 'Which element, named as the snapshot named it.' },
+  browser_type: { what: 'Types text into a field on the page.', look: 'The field and the text.' },
+  browser_fill_form: { what: 'Fills several form fields in one go.', look: 'The field names and the values.' },
+  browser_select_option: { what: 'Chooses an option from a dropdown.', look: 'The dropdown and the option.' },
+  browser_hover: { what: 'Moves the pointer over something without clicking.', look: 'The element.' },
+  browser_press_key: { what: 'Presses one key, such as Enter or Escape.', look: 'The key.' },
+  browser_take_screenshot: { what: 'Saves a picture of the page as it looks now.', look: 'The file it was saved to.' },
+  browser_console_messages: { what: 'Reads the errors and logs the page itself printed.', look: 'Errors first; they explain a broken page.' },
+  browser_network_requests: { what: 'Lists the requests the page made and what came back.', look: 'Any request that failed or returned an error status.' },
+  browser_evaluate: { what: 'Runs a snippet of JavaScript inside the page and returns the result.', look: 'The snippet, then the value it returned.' },
+  browser_wait_for: { what: 'Waits until something appears, disappears, or a set time passes.', look: 'What it is waiting for.' },
+  browser_resize: { what: 'Changes the browser window size, usually to check a layout at another width.', look: 'The width and height.' },
+  browser_close: { what: 'Closes the browser.', look: 'Nothing to read.' },
+  browser_tabs: { what: 'Lists, opens, closes or switches browser tabs.', look: 'Which action, and which tab.' },
+  browser_handle_dialog: { what: 'Answers a browser popup such as an alert or a confirm box.', look: 'Whether it accepted or dismissed.' },
+  browser_drag: { what: 'Drags one element onto another.', look: 'The two elements.' },
+  browser_file_upload: { what: 'Attaches a file to a file input on the page.', look: 'The file path.' },
+  browser_find: { what: 'Searches the page for text or a pattern.', look: 'What it searched for.' },
+};
+
+/** What each connected MCP server is, for actions with no line of their own. */
+const MCP_SERVERS: Record<string, string> = {
+  playwright: 'a real browser it drives',
+  figma: 'the Figma design service',
+};
+
 export function gloss(name: string): ToolGloss {
   if (TOOLS[name]) return TOOLS[name];
   if (name.startsWith('mcp__')) {
-    const [, server, tool] = name.split('__');
-    return { what: `Calls the "${tool}" action of the connected ${server} service.`, look: 'The arguments passed.' };
+    const [, server, ...rest] = name.split('__');
+    const action = rest.join('__');
+    const known = MCP_ACTIONS[action];
+    if (known) return known;
+    const where = MCP_SERVERS[server] ?? `the connected ${server} service`;
+    const readable = action.replace(/_+/g, ' ').trim();
+    return {
+      what: `Asks ${where} to ${readable || 'do something'}. This app has no written line for that action yet.`,
+      look: 'The arguments passed, then the result.',
+    };
   }
-  return { what: 'A tool without a written explanation yet.', look: 'The raw input.' };
+  return {
+    what: `${name} is a tool this app has no written explanation for. It is not part of the built-in set, so it came from a plugin or a connected service.`,
+    look: 'The raw input, then the result underneath.',
+  };
 }
