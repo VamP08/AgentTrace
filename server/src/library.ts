@@ -10,91 +10,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
 import matter from 'gray-matter';
 import type {
-  Completeness, Encounter, EntrySource, LearningEntry, LibraryEntry, ProjectRecord,
-  SlotId, SlotStatus,
+  Completeness, Encounter, EntrySource, LearningEntry, LibraryEntry, ProjectRecord, Section, SlotId,
 } from '@agenttrace/shared';
-import { COMPUTED_SLOTS, REQUIRED_SLOTS, SLOTS } from '@agenttrace/shared';
+import { COMPUTED_SLOTS, SLOTS, completeness, sections, words } from '@agenttrace/shared';
 
-/**
- * Headings that fill a body slot. Matched case-insensitively on the whole heading, then by
- * prefix, so "Why here" from the older lessons and "Why you would reach for it" from the newer
- * ones both land on `why` without either being rewritten.
- */
-const HEADING_SLOTS: [RegExp, SlotId][] = [
-  [/^what it is\b/i, 'what-it-is'],
-  [/^why\b/i, 'why'],
-  [/^the idea in one picture\b/i, 'picture'],
-  [/^how it works\b/i, 'how-it-works'],
-  [/^cheat ?sheet\b/i, 'cheat-sheet'],
-  [/^common mistakes\b/i, 'common-mistakes'],
-  [/^where it shows up\b/i, 'where-it-shows-up'],
-  [/^go deeper\b/i, 'go-deeper'],
-];
-
-export interface Section {
-  title: string;
-  body: string;
-  slot?: SlotId;
-}
-
-/** Split a body on level-2 headings. Order is preserved; a body with no headings is one section. */
-export function sections(body: string): Section[] {
-  const parts = body.split(/^## +/m);
-  if (parts.length < 2) return body.trim() ? [{ title: '', body: body.trim() }] : [];
-  return parts.slice(1).map((p) => {
-    const nl = p.indexOf('\n');
-    const title = (nl < 0 ? p : p.slice(0, nl)).trim();
-    const text = (nl < 0 ? '' : p.slice(nl + 1)).trim();
-    return { title, body: text, slot: HEADING_SLOTS.find(([re]) => re.test(title))?.[1] };
-  });
-}
-
-function words(s: string): number {
-  return s.split(/\s+/).filter(Boolean).length;
-}
-
-/**
- * Which slots this entry holds, which are empty, and which it says cannot be filled here.
- * `where-it-shows-up` is computed from the projects that used the concept, so it is never
- * counted as missing — an entry nobody has anchored yet is not incomplete for that reason.
- */
-export function completeness(entry: {
-  body: string;
-  objectives?: string[];
-  questions?: unknown[];
-  exercise?: unknown;
-  sources?: unknown[];
-  verified?: unknown;
-  cannotFill?: Record<string, string>;
-}): Completeness {
-  const bySlot = new Map<SlotId, Section>();
-  for (const s of sections(entry.body)) if (s.slot && !bySlot.has(s.slot)) bySlot.set(s.slot, s);
-
-  const fromFrontmatter: Partial<Record<SlotId, number>> = {
-    objectives: entry.objectives?.length ?? 0,
-    questions: entry.questions?.length ?? 0,
-    exercise: entry.exercise ? 1 : 0,
-    sources: entry.sources?.length ?? 0,
-    verified: entry.verified ? 1 : 0,
-  };
-
-  const cannot = entry.cannotFill ?? {};
-  const slots: SlotStatus[] = SLOTS.map((slot) => {
-    const reason = cannot[slot];
-    const section = bySlot.get(slot);
-    const count = fromFrontmatter[slot];
-    const present = section ? true : count !== undefined ? count > 0 : false;
-    if (present) return { slot, state: 'written', words: section ? words(section.body) : count };
-    if (reason) return { slot, state: 'unfillable', reason };
-    return { slot, state: 'empty' };
-  });
-
-  const authored = slots.filter((s) => !COMPUTED_SLOTS.includes(s.slot));
-  const written = authored.filter((s) => s.state === 'written').length;
-  const fillable = authored.filter((s) => s.state !== 'unfillable').length;
-  const hasFloor = REQUIRED_SLOTS.every((r) => slots.find((s) => s.slot === r)?.state === 'written');
-  return { slots, written, fillable, hasFloor, complete: written === fillable };
-}
+export { completeness, sections } from '@agenttrace/shared';
 
 function list(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : typeof v === 'string' && v ? [v] : [];
@@ -260,6 +180,175 @@ export function resolveLesson(lesson: LearningEntry, library: LibraryEntry[]): R
     cannotFill: { ...entry.cannotFill, ...lesson.cannotFill },
   });
   return { sections: merged, origin, entry, completeness: merge };
+}
+
+/**
+ * What a slot costs to write, in words. Measured from the entries that already have it, so the
+ * estimate calibrates itself as the library grows. The fallbacks are the measured word counts of
+ * the first entry written to the full shape (concept/rate-limiting, 2026-09-09) — a real
+ * observation of one entry, not a guess, and labelled as a single sample so nobody reads more
+ * into it than that.
+ */
+const FALLBACK_WORDS: Record<SlotId, number> = {
+  'what-it-is': 161, why: 167, picture: 65, 'how-it-works': 326, questions: 278,
+  objectives: 46, 'cheat-sheet': 253, 'common-mistakes': 164, exercise: 185,
+  verified: 15, sources: 60, 'go-deeper': 201, 'where-it-shows-up': 0,
+};
+
+/** Slots whose writing means reading something outside the repository first. */
+const NEEDS_FETCH: SlotId[] = ['sources', 'go-deeper'];
+
+export interface SlotBasis {
+  slot: SlotId;
+  medianWords: number;
+  samples: number;
+  from: 'measured' | 'single observation';
+}
+
+export interface EntryEstimate {
+  key: string;
+  title: string;
+  missing: SlotId[];
+  unfillable: SlotId[];
+  written: number;
+  fillable: number;
+  words: number;
+  tokens: number;
+}
+
+export interface CompletionBrief {
+  basis: SlotBasis[];
+  entries: EntryEstimate[];
+  totalWords: number;
+  totalTokens: number;
+  /** how the number was reached, for the screen; an estimate that hides its arithmetic is a guess in a costume */
+  method: string[];
+}
+
+function median(ns: number[]): number {
+  const s = [...ns].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
+/** Words per slot, measured across everything already written that has that slot. */
+export function slotBasis(entries: { body: string; objectives?: string[]; questions?: { q: string; a: string }[]; exercise?: { task: string; hint?: string; solution?: string }; sources?: unknown[]; verified?: unknown }[]): SlotBasis[] {
+  const samples = new Map<SlotId, number[]>();
+  const add = (slot: SlotId, n: number) => {
+    if (n > 0) samples.set(slot, [...(samples.get(slot) ?? []), n]);
+  };
+  for (const e of entries) {
+    for (const s of sections(e.body)) if (s.slot) add(s.slot, words(s.body));
+    add('objectives', words((e.objectives ?? []).join(' ')));
+    add('questions', words((e.questions ?? []).map((q) => `${q.q} ${q.a}`).join(' ')));
+    if (e.exercise) add('exercise', words([e.exercise.task, e.exercise.hint ?? '', e.exercise.solution ?? ''].join(' ')));
+  }
+  return SLOTS.map((slot) => {
+    const got = samples.get(slot) ?? [];
+    return got.length
+      ? { slot, medianWords: median(got), samples: got.length, from: 'measured' as const }
+      : { slot, medianWords: FALLBACK_WORDS[slot], samples: 1, from: 'single observation' as const };
+  });
+}
+
+/**
+ * What it would cost to finish these entries. Output tokens come from the words a slot has
+ * historically taken; input tokens from re-reading the entry, plus an allowance for the pages a
+ * session must open when a slot requires sources. Every number is arithmetic over measured
+ * counts, and `method` carries the arithmetic so the screen can show it.
+ */
+export function completionBrief(
+  entries: { key: string; title: string; body: string; objectives?: string[]; questions?: { q: string; a: string }[]; exercise?: unknown; sources?: unknown[]; verified?: unknown; cannotFill?: Record<string, string> }[],
+  basis = slotBasis(entries as any),
+): CompletionBrief {
+  const wordsFor = new Map(basis.map((b) => [b.slot, b.medianWords]));
+  const TOKENS_PER_WORD = 1.35;
+  const FETCH_TOKENS = 4000;
+
+  const out: EntryEstimate[] = [];
+  for (const e of entries) {
+    const c = completeness(e as any);
+    const missing = c.slots.filter((s) => s.state === 'empty' && !COMPUTED_SLOTS.includes(s.slot)).map((s) => s.slot);
+    const unfillable = c.slots.filter((s) => s.state === 'unfillable').map((s) => s.slot);
+    if (!missing.length) continue;
+    const w = missing.reduce((n, slot) => n + (wordsFor.get(slot) ?? 0), 0);
+    const readTokens = Math.round(words(e.body) * TOKENS_PER_WORD);
+    const fetchTokens = missing.some((m) => NEEDS_FETCH.includes(m)) ? FETCH_TOKENS : 0;
+    out.push({
+      key: e.key,
+      title: e.title,
+      missing,
+      unfillable,
+      written: c.written,
+      fillable: c.fillable,
+      words: w,
+      tokens: Math.round(w * TOKENS_PER_WORD) + readTokens + fetchTokens,
+    });
+  }
+  out.sort((a, b) => b.missing.length - a.missing.length || a.key.localeCompare(b.key));
+  const measured = basis.filter((b) => b.from === 'measured').length;
+  return {
+    basis,
+    entries: out,
+    totalWords: out.reduce((n, e) => n + e.words, 0),
+    totalTokens: out.reduce((n, e) => n + e.tokens, 0),
+    method: [
+      `Words per slot are the median of the entries that already have that slot; ${measured} of ${SLOTS.length} slots have at least one sample, the rest fall back to the measured counts of the first full entry.`,
+      `Output tokens are words x ${TOKENS_PER_WORD}.`,
+      `Input tokens are the entry re-read at the same rate, plus ${n(FETCH_TOKENS)} where a missing slot needs sources fetched.`,
+      'The figure excludes the session\'s own reasoning and any code it runs to verify an example, so treat it as a floor rather than a forecast.',
+    ],
+  };
+}
+
+const SLOT_WORK: Partial<Record<SlotId, string>> = {
+  'what-it-is': 'Two or three short paragraphs a non-programmer can follow: what the thing is, what it replaces, and the sentence that makes it click.',
+  why: 'Why this project needed it, what simpler thing would have failed, and what it costs.',
+  picture: 'One mermaid diagram of the mechanism, with a sentence under it saying what to look at.',
+  'how-it-works': 'Numbered steps in the order the code does them, then one worked example with real numbers taken from this project.',
+  questions: 'Two to four questions with answers, each answerable from the entry, at least one of them not pure recall. Give each an immutable id.',
+  objectives: 'Three or four lines: what the reader should be able to do afterwards.',
+  'cheat-sheet': 'A table of the surface actually used here — the decisions or calls, what each answers, and what getting it wrong looks like.',
+  'common-mistakes': 'The mistakes this thing invites, each with the symptom that gives it away.',
+  exercise: 'One task doable in ten minutes on this machine, with a hint and a real runnable solution. Give it an immutable id.',
+  verified: 'Run the example. Record the command, exit code, resolved version and time in `verified:`. If it cannot be run here, write the reason under `cannot_fill:` instead.',
+  sources: 'Search the web, open what you find, and record each source with the URL and what was taken from it. Do not write this from memory.',
+  'go-deeper': 'Two or three links you actually opened, each with one line on why it is worth the reader\'s time.',
+};
+
+/** Group digits the same way on every machine; the default locale here groups Indian-style. */
+function n(x: number): string {
+  return x.toLocaleString('en-US');
+}
+
+/** The work order a session runs to finish these entries. The app writes the brief; the session writes the entries. */
+export function briefMarkdown(project: string, brief: CompletionBrief, libraryRoot?: string): string {
+  const L: string[] = [];
+  L.push(`# Completion brief: ${project}`, '');
+  if (!brief.entries.length) {
+    L.push('Every entry is complete, or every empty slot is marked as one that cannot be filled here.', '');
+    return L.join('\n');
+  }
+  L.push(`${brief.entries.length} entries are short of a slot. Estimated **${n(brief.totalTokens)} tokens** to finish all of them, ${n(brief.totalWords)} words of writing.`, '');
+  L.push('## How that number was reached', '');
+  for (const m of brief.method) L.push(`- ${m}`);
+  L.push('');
+  L.push('## Rules', '');
+  L.push('- Write each entry in the same turn you finish reading it; do not batch to the end.');
+  L.push('- Search the web before writing. Anything you cannot open, do not claim.');
+  L.push('- Run any example you write and record the result in `verified:`.');
+  L.push('- A slot that cannot be filled here goes under `cannot_fill:` with the reason, not left blank.');
+  if (libraryRoot) L.push(`- Shared entries live in \`${libraryRoot}\`; a project lesson overlays one by naming it in \`extends:\`.`);
+  L.push('');
+  L.push('## Entries, most incomplete first', '');
+  for (const e of brief.entries) {
+    L.push(`### ${e.title}`, '');
+    L.push(`\`${e.key}\` — ${e.written}/${e.fillable} slots, about ${n(e.tokens)} tokens`, '');
+    for (const slot of e.missing) L.push(`- **${slot}** — ${SLOT_WORK[slot] ?? 'write this slot'}`);
+    if (e.unfillable.length) L.push('', `Already marked as unfillable here, leave alone: ${e.unfillable.join(', ')}.`);
+    L.push('');
+  }
+  return L.join('\n');
 }
 
 /** Every project lesson that extends a given library entry, for the computed "where it shows up". */

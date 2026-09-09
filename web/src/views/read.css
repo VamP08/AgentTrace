@@ -605,3 +605,17 @@ p.rd-a,
 /* No rule in this file animates or transitions anything: hover and selection are instant ground
    changes and the copy control swaps a word. There is nothing here for prefers-reduced-motion to
    suppress, and nothing may be added without one. */
+
+/* Slot strip: written, empty, and the third state that must not read like the second —
+   a slot that cannot be filled here is a fact, not an unfinished job. */
+.rd-slots { display: flex; flex-wrap: wrap; gap: var(--s-xs); margin: var(--s-l) 0; }
+.rd-slot {
+  font: var(--t-label); padding: 2px 8px; border-radius: var(--r-s);
+  border: 1px solid var(--hairline); color: var(--ink-3);
+}
+.rd-slot.written { color: var(--ink); border-color: var(--hairline-strong); }
+.rd-slot.written::before { content: '✓'; margin-right: 4px; color: var(--success); }
+.rd-slot.empty { border-style: dashed; }
+.rd-slot.unfillable { color: var(--ink-3); border-style: dotted; text-decoration: line-through; }
+.rd-brief { margin-top: var(--s-section); border-top: 1px solid var(--hairline); padding-top: var(--s-l); }
+.rd-briefrow { padding: 0 var(--s-rail-gutter) var(--s-s); }

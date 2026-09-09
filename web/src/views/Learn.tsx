@@ -2,7 +2,8 @@
 // as a picture, the mechanism in steps, questions to commit to before revealing, and one
 // exercise with a hint and a solution. Progress is a per-browser "read" mark, nothing more.
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { CodeWindow, LearningEntry, ProjectRecord } from '@agenttrace/shared';
+import type { CodeWindow, Completeness, LearningEntry, LibraryEntry, ProjectRecord } from '@agenttrace/shared';
+import { SLOT_LABELS, completeness, sections as splitSlots } from '@agenttrace/shared';
 import { Markdown, Code } from '../components/Markdown';
 import './read.css';
 
@@ -32,7 +33,8 @@ export function Learn({ base, cwd }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
-  const [tab, setTab] = useState<'learning' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [tab, setTab] = useState<'learning' | 'library' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [brief, setBrief] = useState<string>();
   const [read, setRead] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -94,6 +96,7 @@ export function Learn({ base, cwd }: Props) {
   const docCount = DOCS.filter((k) => record[k]).length;
   const tabs = {
     learning: `Lessons ${record.learning.length}`,
+    library: `Library ${record.library.length}`,
     decisions: `Decisions ${record.decisions.length}`,
     journal: `Journal ${record.journal.length}`,
     docs: `Documents ${docCount}`,
@@ -103,11 +106,24 @@ export function Learn({ base, cwd }: Props) {
     <div className="split rd-split">
       <aside className="files rd-rail">
         <div className="rd-tabs">
-          {(['learning', 'decisions', 'journal', 'docs'] as const).map((t) => (
+          {(['learning', 'library', 'decisions', 'journal', 'docs'] as const).map((t) => (
             <button key={t} className={`btn sm ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
               {tabs[t]}
             </button>
           ))}
+        </div>
+        <div className="rd-row rd-briefrow">
+          <button
+            className="btn sm quiet"
+            onClick={() => {
+              if (brief !== undefined) return setBrief(undefined);
+              fetch(`${base.replace(/\/record$/, '/brief')}?format=md`)
+                .then((r) => (r.ok ? r.text() : 'The brief could not be built.'))
+                .then(setBrief);
+            }}
+          >
+            {brief === undefined ? 'What is missing' : 'Hide what is missing'}
+          </button>
         </div>
         {tab === 'learning' && (
           <>
@@ -129,6 +145,24 @@ export function Learn({ base, cwd }: Props) {
               </button>
             ))}
           </>
+        )}
+        {tab === 'library' && (
+          record.library.length === 0 ? (
+            <div className="rd-alert">
+              No library is configured for this project. Add a <code>library</code> path to <code>agenttrace.json</code> and
+              shared entries appear here, one per concept, reused by every project that uses it.
+            </div>
+          ) : (
+            record.library.map((e) => {
+              const c = completeness(e);
+              return (
+                <button key={e.key} className={`node rd-entry ${pick === `lib:${e.key}` ? 'sel' : ''}`} onClick={() => setPick(`lib:${e.key}`)}>
+                  <span className="rd-t">{e.title}</span>
+                  <span className="rd-m">{e.type} · {c.written} of {c.fillable} slots{c.complete ? ' · complete' : ''}</span>
+                </button>
+              );
+            })
+          )
         )}
         {tab === 'decisions' &&
           record.decisions.map((d) => (
@@ -157,19 +191,32 @@ export function Learn({ base, cwd }: Props) {
       </aside>
 
       <section className="rd-pane">
-        {!pick && (
+        {brief !== undefined && (
+          <div className="rd-brief">
+            <div className="rd-row">
+              <button className="btn sm quiet" onClick={() => navigator.clipboard?.writeText(brief)}>Copy the brief</button>
+              <button className="btn sm quiet" onClick={() => setBrief(undefined)}>Close</button>
+              <span className="rd-c">Run it in a coding session; this app writes nothing itself.</span>
+            </div>
+            <Markdown text={brief} onLink={openSlug} />
+          </div>
+        )}
+        {brief === undefined && !pick && (
           <div className="empty rd-empty">
             <h3>{record.project}: {record.learning.length} lessons, in the order they were needed.</h3>
             Each lesson opens on the lines of your own code where the idea lives, then explains it, then asks you two or three
             questions and gives you one thing to try. Lessons are ordered so that what a lesson needs comes before it.
             Start with the first unread one.
-            <div className="rd-row"><button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button></div>
+            <div className="rd-row">
+              <button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button>
+            </div>
+
           </div>
         )}
-        {entry && pick && !pick.includes(':') && (
+        {brief === undefined && entry && pick && !pick.includes(':') && (
           <Lesson key={entry.slug} entry={entry} record={record} ordered={ordered} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={openSlug} onNext={goNext} />
         )}
-        {pick?.startsWith('d:') && (() => {
+        {brief === undefined && pick?.startsWith('d:') && (() => {
           const d = record.decisions.find((x) => `d:${x.slug}` === pick);
           return d ? (
             <article className="rd-read">
@@ -179,7 +226,7 @@ export function Learn({ base, cwd }: Props) {
             </article>
           ) : null;
         })()}
-        {pick?.startsWith('j:') && (() => {
+        {brief === undefined && pick?.startsWith('j:') && (() => {
           const j = record.journal.find((x) => `j:${x.slug}` === pick);
           return j ? (
             <article className="rd-read">
@@ -191,7 +238,49 @@ export function Learn({ base, cwd }: Props) {
             </article>
           ) : null;
         })()}
-        {pick?.startsWith('doc:') && (() => {
+        {brief === undefined && pick?.startsWith('lib:') && (() => {
+          const e = record.library.find((x) => `lib:${x.key}` === pick);
+          if (!e) return null;
+          const c = completeness(e);
+          return (
+            <article className="rd-read">
+              <h2>{e.title}</h2>
+              <div className="rd-meta rd-meta-under">
+                <span className="pill">{e.type}</span>
+                <span className="pill">{e.level}</span>
+                <span className="rd-c">shared · {e.key}</span>
+              </div>
+              <p className="rd-lead">{e.summary}</p>
+              <Slots c={c} />
+              {e.verified ? (
+                <p className="rd-c">The example was run: <code>{e.verified.command}</code>, exit {e.verified.exit}
+                  {e.verified.version ? `, on ${e.verified.version}` : ''}{e.verified.at ? `, ${e.verified.at.slice(0, 10)}` : ''}.</p>
+              ) : (
+                <p className="rd-c">No example has been run for this entry.</p>
+              )}
+              {splitSlots(e.body).map((sec) => (
+                <section key={sec.title}>
+                  <h3>{sec.title}</h3>
+                  <Markdown text={sec.body} onLink={openSlug} />
+                </section>
+              ))}
+              {e.sources.length > 0 && (
+                <>
+                  <h3>Sources</h3>
+                  <ul>
+                    {e.sources.map((src) => (
+                      <li key={src.url}>
+                        <a href={src.url} target="_blank" rel="noreferrer">{src.title || src.url}</a>
+                        {src.took ? ` — ${src.took}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </article>
+          );
+        })()}
+        {brief === undefined && pick?.startsWith('doc:') && (() => {
           const k = pick.slice(4) as (typeof DOCS)[number];
           const d = record[k];
           return d ? (
@@ -203,6 +292,24 @@ export function Learn({ base, cwd }: Props) {
           ) : null;
         })()}
       </section>
+    </div>
+  );
+}
+
+/** Which slots an entry holds. Three states, and the third is the point: a slot that cannot be
+ *  filled here is a fact, not a to-do, and must not read as one. */
+function Slots({ c }: { c: Completeness }) {
+  return (
+    <div className="rd-slots" aria-label={`${c.written} of ${c.fillable} slots written`}>
+      {c.slots.map((s) => (
+        <span
+          key={s.slot}
+          className={`rd-slot ${s.state}`}
+          title={s.state === 'unfillable' ? `Cannot be filled here: ${s.reason}` : s.state === 'written' ? 'Written' : 'Not written yet'}
+        >
+          {SLOT_LABELS[s.slot]}
+        </span>
+      ))}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { completeness, encountersOf, readLibrary, resolveLesson, sections } from '../src/library.js';
+import { completeness, completionBrief, encountersOf, readLibrary, resolveLesson, sections, slotBasis } from '../src/library.js';
 import type { LearningEntry, ProjectRecord } from '@agenttrace/shared';
 
 let root: string;
@@ -214,6 +214,55 @@ describe('resolveLesson', () => {
   it('carries the library\'s unfillable reason through the merge', () => {
     const r = resolveLesson(lesson({ extends: 'concept/byte-offset-tailing' }), library());
     expect(r.completeness.slots.find((s) => s.slot === 'verified')!.state).toBe('unfillable');
+  });
+});
+
+describe('completionBrief', () => {
+  it('leaves out entries that need nothing', () => {
+    const { entries } = readLibrary(root);
+    const b = completionBrief(entries);
+    expect(b.entries.find((e) => e.key === 'concept/rate-limiting')).toBeUndefined();
+    expect(b.entries.find((e) => e.key === 'concept/byte-offset-tailing')).toBeDefined();
+  });
+
+  it('never asks for a slot the entry says cannot be filled here', () => {
+    const { entries } = readLibrary(root);
+    const thin = completionBrief(entries).entries.find((e) => e.key === 'concept/byte-offset-tailing')!;
+    expect(thin.missing).not.toContain('verified');
+    expect(thin.unfillable).toContain('verified');
+  });
+
+  it('never asks for the computed slot', () => {
+    const { entries } = readLibrary(root);
+    for (const e of completionBrief(entries).entries) expect(e.missing).not.toContain('where-it-shows-up');
+  });
+
+  it('measures the basis from entries that have the slot, and says so', () => {
+    const { entries } = readLibrary(root);
+    const basis = slotBasis(entries);
+    const cheat = basis.find((b) => b.slot === 'cheat-sheet')!;
+    expect(cheat.from).toBe('measured');
+    expect(cheat.samples).toBeGreaterThan(0);
+  });
+
+  it('falls back to a single observation for a slot nothing has yet, and labels it', () => {
+    const basis = slotBasis([{ body: '## What it is\n\nonly this' }]);
+    expect(basis.find((b) => b.slot === 'cheat-sheet')!.from).toBe('single observation');
+    expect(basis.find((b) => b.slot === 'what-it-is')!.from).toBe('measured');
+  });
+
+  it('carries the arithmetic so the screen can show it', () => {
+    const b = completionBrief(readLibrary(root).entries);
+    expect(b.method.join(' ')).toMatch(/median/);
+    expect(b.method.join(' ')).toMatch(/floor rather than a forecast/);
+  });
+
+  it('costs more when a missing slot needs sources fetched', () => {
+    const withSources = completionBrief([{ key: 'a', title: 'a', body: '## What it is\n\nx' }]).entries[0];
+    const noSources = completionBrief([
+      { key: 'b', title: 'b', body: '## What it is\n\nx', cannotFill: { sources: 'offline', 'go-deeper': 'offline' } },
+    ]).entries[0];
+    expect(withSources.tokens).toBeGreaterThan(noSources.tokens);
   });
 });
 

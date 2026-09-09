@@ -78,7 +78,12 @@ export function Markdown({ text, onLink }: { text: string; onLink?: (slug: strin
     <>
       {blocks.map((b, i) => {
         if (b.kind === 'fence') return b.lang === 'mermaid' ? <Diagram key={i} source={b.body} /> : <Code key={i} code={b.body} language={b.lang} />;
-        if (b.kind === 'heading') return <h4 key={i}>{b.body}</h4>;
+        if (b.kind === 'heading') {
+          // The pane already owns h2, so a body's own headings start below it and never
+          // outrank the title of the thing being read.
+          const Tag = `h${Math.min((b.level ?? 3) + 2, 6)}` as 'h3' | 'h4' | 'h5' | 'h6';
+          return <Tag key={i}>{b.body}</Tag>;
+        }
         if (b.kind === 'ul') return <ul key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} onLink={onLink} /></li>)}</ul>;
         if (b.kind === 'ol') return <ol key={i}>{b.items!.map((it, j) => <li key={j}><Inline text={it} onLink={onLink} /></li>)}</ol>;
         return <p key={i}><Inline text={b.body} onLink={onLink} /></p>;
@@ -87,7 +92,7 @@ export function Markdown({ text, onLink }: { text: string; onLink?: (slug: strin
   );
 }
 
-interface Block { kind: 'p' | 'fence' | 'heading' | 'ul' | 'ol'; body: string; lang?: string; items?: string[] }
+interface Block { kind: 'p' | 'fence' | 'heading' | 'ul' | 'ol'; body: string; lang?: string; items?: string[]; level?: number }
 
 function tokenize(text: string): Block[] {
   const out: Block[] = [];
@@ -105,7 +110,8 @@ function tokenize(text: string): Block[] {
       out.push({ kind: 'fence', body: body.join('\n'), lang });
       continue;
     }
-    if (/^#{3,6} /.test(line)) { out.push({ kind: 'heading', body: line.replace(/^#+ /, '') }); i++; continue; }
+    const h = /^(#{1,6}) /.exec(line);
+    if (h) { out.push({ kind: 'heading', body: line.slice(h[1].length + 1), level: h[1].length }); i++; continue; }
     if (/^(\d+\.|[-*]) /.test(line)) {
       const ordered = /^\d+\./.test(line);
       const items: string[] = [];
