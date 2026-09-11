@@ -124,7 +124,7 @@ export function archiveRecord(claudeRoot: string, project: string, recordRoot: s
 }
 
 /** Files, total bytes and newest mtime under a folder: enough to tell a changed record from an unchanged one. */
-function measure(root: string): { files: number; bytes: number; newest: number } {
+export function measure(root: string): { files: number; bytes: number; newest: number } {
   let files = 0;
   let bytes = 0;
   let newest = 0;

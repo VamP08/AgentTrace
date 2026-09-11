@@ -115,6 +115,8 @@ export interface Decision {
   tags: string[];
   files: string[];
   supersedes?: string;
+  /** the session that decided it; the join key from the record into the transcript */
+  session?: string;
   reconstructed?: boolean;
   source?: string;
   body: string;
@@ -131,6 +133,8 @@ export interface JournalEntry {
   decisions: string[];
   commits: string[];
   next: string[];
+  /** the session this entry is the log of */
+  session?: string;
   reconstructed?: boolean;
   source?: string;
   body: string;

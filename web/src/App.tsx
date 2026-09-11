@@ -8,11 +8,15 @@ import { Agents } from './views/Agents';
 import { Context } from './views/Context';
 import { Setup } from './views/Setup';
 import { Project } from './views/Project';
+import { Digest } from './views/Digest';
+import { Search } from './views/Search';
 import type { Project as ProjectRow, ProjectIndex } from '@agenttrace/shared';
 import { StackStrip } from './components/StackStrip';
 
-// Only views that exist. Others arrive when they are built, not before.
-const VIEWS = [{ id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
+// Only views that exist. Others arrive when they are built, not before. Digest is first and is
+// where a session opens: somebody arriving at a session they did not watch wants what changed and
+// why before they want the turn-by-turn.
+const VIEWS = [{ id: 'Digest' }, { id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
 type ViewId = (typeof VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -27,11 +31,12 @@ function readTheme(): 'dark' | 'light' {
 
 export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
-  const [view, setView] = useState<ViewId>('Turns');
+  const [view, setView] = useState<ViewId>('Digest');
   const [query, setQuery] = useState('');
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
   const [setup, setSetup] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [index, setIndex] = useState<ProjectIndex>({ projects: [], misc: [] });
   const [openProject, setOpenProject] = useState<string>();
   const [showOther, setShowOther] = useState(false);
@@ -98,6 +103,7 @@ export function App() {
   const select = (id: string) => {
     setOpenProject(undefined);
     setSetup(false);
+    setSearching(false);
     setRailOpen(false);
     dispatch({ type: 'select', id });
     socket.current?.subscribe(id);
@@ -105,6 +111,7 @@ export function App() {
 
   const selectProject = (id: string) => {
     setSetup(false);
+    setSearching(false);
     setRailOpen(false);
     setOpenProject(id);
     setOpened((o) => ({ ...o, [id]: true }));
@@ -222,7 +229,8 @@ export function App() {
           ) : (
             <span className="state"><i className="dot" style={{ color: link === 'open' ? 'var(--success)' : 'var(--danger)' }} />{link === 'open' ? 'Server connected' : 'Server offline'}</span>
           )}
-          <button className="btn sm quiet" onClick={() => { setSetup(true); setRailOpen(false); }}>Setup</button>
+          <button className="btn sm quiet" onClick={() => { setSearching(true); setSetup(false); setRailOpen(false); }} aria-pressed={searching}>Search record</button>
+          <button className="btn sm quiet" onClick={() => { setSetup(true); setSearching(false); setRailOpen(false); }}>Setup</button>
           <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
             {theme === 'dark' ? 'Light theme' : 'Dark theme'}
           </button>
@@ -234,7 +242,9 @@ export function App() {
         <div className="railbar">
           <button className="btn quiet" onClick={() => setRailOpen(true)} aria-expanded={railOpen}>Sessions</button>
         </div>
-        {setup ? (
+        {searching ? (
+          <Search onOpenSession={select} onClose={() => setSearching(false)} />
+        ) : setup ? (
           <Setup onClose={() => setSetup(false)} />
         ) : openProject ? (
           <Project id={openProject} onOpenSession={select} onOpenProject={selectProject} />
@@ -279,6 +289,7 @@ export function App() {
             </header>
             <div className="stage">
               <StackStrip events={s.events} />
+              {view === 'Digest' && <Digest sessionId={current.id} live={current.live} batches={s.batches} />}
               {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
               {view === 'Context' && <Context events={s.events} hooks={hooks} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}

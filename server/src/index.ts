@@ -6,14 +6,17 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMessage, Project, ProjectRecord, ServerMessage } from '@agenttrace/shared';
+import type { ClientMessage, DigestCommit, Event, Project, ProjectRecord, ServerMessage, Session } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
-import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
+import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
+import { buildIndex, search, type Index as SearchIndex } from './search.js';
+import { buildDigest } from './digest.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
 import { buildDossier, docDirsFor, documents, readDocument } from './dossier.js';
 import { briefEntries, briefMarkdown, completionBrief, slotBasis, stackCoverage } from './library.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
+import { keyOf, loadRegistry } from './repos.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
 import { parseFile, type ParsedFile } from './parse.js';
 import { detectStack } from './stack.js';
@@ -53,7 +56,7 @@ async function history(file: string, id: string): Promise<ParsedFile> {
 }
 
 /** The record is the repository's own: its manifest at the root, or the registry's memory of it once the folder is gone. Never guessed from a session. */
-function recordFor(p: Project): ProjectRecord | undefined {
+function recordFor(p: Pick<Project, 'name' | 'root' | 'recordRoot' | 'recordMissing'>): ProjectRecord | undefined {
   const found = existsSync(join(p.root, 'agenttrace.json')) ? findManifest(p.root) : undefined;
   const record = found
     ? readRecordAt(found)
@@ -71,6 +74,53 @@ function recordFor(p: Project): ProjectRecord | undefined {
     }
   }
   return record;
+}
+
+// The search index is derived from the Markdown and thrown away the moment any record folder
+// changes. A stat walk over the folders is what tells: names, sizes and the newest mtime. The
+// library root is learned from the records themselves, so it joins the stamp on the next pass.
+let indexCache: { stamp: string; records: ProjectRecord[]; index: SearchIndex; libraryRoots: string[] } | undefined;
+
+function stampOf(paths: string[]): string {
+  return paths
+    .map((p) => {
+      const m = measure(p);
+      return `${p}:${m.files}:${m.bytes}:${m.newest}`;
+    })
+    .join('|');
+}
+
+/**
+ * Every record on this machine, from the registry rather than from the transcripts. The registry
+ * already knows which repository keeps a record and where, so search costs a stat walk over those
+ * folders — not a parse of every session the tool has ever written.
+ */
+function recordIndex(): { records: ProjectRecord[]; index: SearchIndex } {
+  const seen = new Set<string>();
+  const roots: Pick<Project, 'name' | 'root' | 'recordRoot' | 'recordMissing'>[] = [];
+  for (const e of Object.values(loadRegistry(claudeRoot).repos)) {
+    if (!e.record || !e.project || !existsSync(e.record) || seen.has(keyOf(e.record))) continue;
+    seen.add(keyOf(e.record));
+    roots.push({ name: e.project, root: e.root, recordRoot: e.record });
+  }
+  const stamp = stampOf([...roots.map((p) => p.recordRoot!), ...(indexCache?.libraryRoots ?? [])]);
+  if (indexCache?.stamp === stamp) return indexCache;
+  const records = roots.map((p) => recordFor(p)).filter((r): r is ProjectRecord => r !== undefined);
+  const libraryRoots = [...new Set(records.map((r) => r.libraryRoot).filter((r): r is string => !!r))];
+  indexCache = { stamp, records, index: buildIndex(records), libraryRoots };
+  return indexCache;
+}
+
+/** Commits made while the session ran, across every repository it edited files in. */
+function commitsFor(session: Session, events: Event[]) {
+  if (!session.cwd) return [];
+  const repos = gitRootsFor(session.cwd, trackedFiles(events, session.cwd).map((f) => f.path));
+  // a little slack either side: clocks and the last commit after the final line
+  const since = new Date(new Date(session.startedAt).getTime() - 60_000).toISOString();
+  const until = new Date(new Date(session.updatedAt).getTime() + 30 * 60_000).toISOString();
+  return repos
+    .flatMap((repo) => commitsBetween(repo, since, until, claudeRoot).map((c) => ({ ...c, repo: basename(repo) })))
+    .sort((a, b) => (a.ts < b.ts ? 1 : -1));
 }
 
 function text(res: ServerResponse, status: number, body: string) {
@@ -155,6 +205,13 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(res, 200, pruneArchive(claudeRoot, cap));
     }
     // ---- end archive size limit ----
+    // ---- search over every record on this machine ----
+    if (parts[1] === 'search' && parts.length === 2) {
+      const { index } = recordIndex();
+      const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 30));
+      return json(res, 200, search(index, url.searchParams.get('q') ?? '', limit, url.searchParams.get('project') || undefined));
+    }
+    // ---- end search ----
     if (parts[1] === 'projects' && parts.length === 2) {
       const { facts, sessions } = await buildFacts(claudeRoot);
       return json(res, 200, foldProjects(facts, sessions));
@@ -235,12 +292,16 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
           }
           return json(res, 404, { error: 'unknown commit' });
         }
-        // a little slack either side: clocks and the last commit after the final line
-        const since = new Date(new Date(session.startedAt).getTime() - 60_000).toISOString();
-        const until = new Date(new Date(session.updatedAt).getTime() + 30 * 60_000).toISOString();
-        const all = repos.flatMap((repo) => commitsBetween(repo, since, until, claudeRoot).map((c) => ({ ...c, repo: basename(repo) })));
-        return json(res, 200, all.sort((a, b) => (a.ts < b.ts ? 1 : -1)));
+        return json(res, 200, commitsFor(session, parsed.events));
       }
+      // ---- the catch-up digest: what changed and why, for a session nobody watched ----
+      if (parts[3] === 'digest') {
+        const parsed = await parseFile(session.file, { sessionId: id });
+        const commits: DigestCommit[] = commitsFor(session, parsed.events).map((c) => ({ sha: c.sha, subject: c.subject, ts: c.ts, repo: c.repo }));
+        const { records } = recordIndex();
+        return json(res, 200, buildDigest(session, parsed.events, discoverAgents(session.dir), commits, records));
+      }
+      // ---- end digest ----
       if (parts[3] === 'record') {
         const parsed = await parseFile(session.file, { sessionId: id });
         const touched = session.cwd ? trackedFiles(parsed.events, session.cwd).map((f) => f.path) : [];

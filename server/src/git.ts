@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { archivedCommits } from './archive.js';
-import { repoOf } from './projects.js';
+import { canon, repoOf } from './projects.js';
 
 export interface Commit {
   sha: string;
@@ -111,7 +111,10 @@ export function gitRootsFor(cwd: string, touched: string[] = []): string[] {
       }
     }
     if (!top) continue;
-    roots.set(top, (roots.get(top) ?? 0) + (n === Infinity ? 1 : n));
+    // git prints forward slashes, repoOf returns whatever the path was resolved to, and Windows
+    // disagrees on case. Two spellings of one repository meant its commits were listed twice.
+    const key = canon(top);
+    roots.set(key, (roots.get(key) ?? 0) + (n === Infinity ? 1 : n));
   }
   return [...roots.entries()].sort((a, b) => b[1] - a[1]).map(([r]) => r);
 }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { commitsBetween, showCommit } from '../src/git.js';
+import { commitsBetween, gitRootsFor, showCommit } from '../src/git.js';
 import { parseHookLog } from '../src/hooks.js';
 
 describe('parseHookLog', () => {
@@ -23,6 +23,29 @@ describe('parseHookLog', () => {
     expect(s.events.find((e) => e.event === 'Notification')?.note).toBe('Claude needs your permission');
     expect(s.sessionStart).toBe('2026-09-03T05:00:00Z');
     expect(s.sessionEnd).toBe('2026-09-03T05:10:00Z');
+  });
+});
+
+describe('gitRootsFor', () => {
+  // A folder that has since been deleted is answered from an ancestor rather than from git, and
+  // the two do not spell a path the same way. Every such spelling used to be its own root, so
+  // every commit of that repository was listed once per spelling.
+  it('names one repository once, however its folders were spelled', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'at-roots-'));
+    const g = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true });
+    g('init', '-q');
+    g('config', 'user.email', 'a@b.c');
+    g('config', 'user.name', 'a');
+    writeFileSync(join(repo, 'a.txt'), 'one\n');
+    g('add', 'a.txt');
+    g('commit', '-q', '-m', 'first');
+    const gone = join(repo, 'scratch');
+    mkdirSync(gone);
+    rmSync(gone, { recursive: true, force: true });
+    const roots = gitRootsFor(repo, [join(repo, 'a.txt'), join(gone, 'b.txt')]);
+    expect(new Set(roots).size).toBe(roots.length);
+    expect(roots).toHaveLength(1);
+    rmSync(repo, { recursive: true, force: true });
   });
 });
 
