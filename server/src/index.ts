@@ -11,7 +11,7 @@ import { discoverAgents, discoverSessions, findSession } from './discover.js';
 import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
 import { buildDossier, docDirsFor, documents, readDocument } from './dossier.js';
-import { briefEntries, briefMarkdown, completionBrief } from './library.js';
+import { briefEntries, briefMarkdown, completionBrief, slotBasis, stackCoverage } from './library.js';
 import { commitsBetween, gitRootsFor, showCommit } from './git.js';
 import { readHookLog } from './hooks.js';
 import { readCurrent, readVersion, trackedFiles } from './fileHistory.js';
@@ -171,7 +171,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       if (parts[3] === 'brief') {
         const record = recordFor(detail);
         if (!record) return json(res, 200, { present: false });
-        const brief = completionBrief(briefEntries(record));
+        const entries = briefEntries(record);
+        const basis = slotBasis(entries as any);
+        const brief = completionBrief(entries, basis, stackCoverage(record, basis));
         if (url.searchParams.get('format') === 'md') {
           return text(res, 200, briefMarkdown(record.project, brief, record.libraryRoot));
         }

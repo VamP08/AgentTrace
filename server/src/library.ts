@@ -12,7 +12,7 @@ import matter from 'gray-matter';
 import type {
   Completeness, Encounter, EntrySource, LearningEntry, LibraryEntry, ProjectRecord, Section, SlotId,
 } from '@agenttrace/shared';
-import { COMPUTED_SLOTS, SLOTS, completeness, sections, words } from '@agenttrace/shared';
+import { COMPUTED_SLOTS, REQUIRED_SLOTS, SLOTS, completeness, sections, words } from '@agenttrace/shared';
 
 export { completeness, sections } from '@agenttrace/shared';
 
@@ -222,13 +222,99 @@ export interface EntryEstimate {
   tokens: number;
 }
 
+/** A technology the project uses that has no entry at all: something to write, not something to finish. */
+export interface CreateEstimate {
+  name: string;
+  category: string;
+  why?: string;
+  /** where an entry for it would go; a suggestion, since only the session writing it can be sure */
+  suggestedKey: string;
+  slots: SlotId[];
+  words: number;
+  tokens: number;
+}
+
+export interface Coverage {
+  /** technologies named in stack.md */
+  total: number;
+  covered: number;
+  uncovered: CreateEstimate[];
+}
+
 export interface CompletionBrief {
   basis: SlotBasis[];
   entries: EntryEstimate[];
+  /** technologies with no entry at all; empty when the project has no stack.md */
+  coverage?: Coverage;
   totalWords: number;
   totalTokens: number;
   /** how the number was reached, for the screen; an estimate that hides its arithmetic is a guess in a costume */
   method: string[];
+}
+
+function normalise(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** `Spring Boot` -> `spring-boot`, for a suggested slug. */
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+/**
+ * Which technologies in `stack.md` have an entry, and which have nothing at all.
+ *
+ * This is the half the brief was blind to. Completeness measures entries that exist; a project
+ * whose stack lists twenty-eight technologies and holds four lessons is not nearly finished, it
+ * is barely started, and a brief that only counts slots in existing entries reports the opposite.
+ * A technology counts as covered when the stack row names a lesson that exists, when its package
+ * matches an entry's, or when its name matches an entry's slug — nothing looser, because a false
+ * match hides exactly the gap this exists to show.
+ */
+export function stackCoverage(record: ProjectRecord, basis: SlotBasis[]): Coverage | undefined {
+  const rows = record.stack?.data?.stack;
+  if (!Array.isArray(rows) || rows.length === 0) return undefined;
+
+  const lessonSlugs = new Set(record.learning.map((l) => l.slug));
+  const lessonNames = new Set(record.learning.map((l) => normalise(l.slug)));
+  const libSlugs = new Set(record.library.map((e) => normalise(e.slug)));
+  const libKeys = new Set(record.library.map((e) => e.key));
+  const libPurls = new Set(record.library.map((e) => e.purl).filter(Boolean) as string[]);
+
+  const wordsFor = new Map(basis.map((b) => [b.slot, b.medianWords]));
+  const TOKENS_PER_WORD = 1.35;
+  const FETCH_TOKENS = 4000;
+  const floorWords = REQUIRED_SLOTS.reduce((n, s) => n + (wordsFor.get(s) ?? 0), 0);
+
+  const uncovered: CreateEstimate[] = [];
+  let covered = 0;
+  for (const row of rows) {
+    const name = String((row as any)?.name ?? '').trim();
+    if (!name) continue;
+    const learning = (row as any)?.learning ? String((row as any).learning) : undefined;
+    const purl = (row as any)?.purl ? String((row as any).purl) : undefined;
+    const n = normalise(name);
+    const hit =
+      (learning && (lessonSlugs.has(learning) || libKeys.has(learning) || libSlugs.has(normalise(learning)))) ||
+      (purl && libPurls.has(purl)) ||
+      lessonNames.has(n) ||
+      libSlugs.has(n);
+    if (hit) {
+      covered += 1;
+      continue;
+    }
+    uncovered.push({
+      name,
+      category: String((row as any)?.category ?? 'other'),
+      why: (row as any)?.why ? String((row as any).why) : undefined,
+      suggestedKey: purl ? `pkg/${purl.replace(/^pkg:/, '')}/${slugify(name)}` : `concept/${slugify(name)}`,
+      slots: [...REQUIRED_SLOTS],
+      words: floorWords,
+      // A new entry is read from nothing, so there is no re-read cost; sources are always fetched.
+      tokens: Math.round(floorWords * TOKENS_PER_WORD) + FETCH_TOKENS,
+    });
+  }
+  return { total: rows.length, covered, uncovered };
 }
 
 function median(ns: number[]): number {
@@ -266,6 +352,7 @@ export function slotBasis(entries: { body: string; objectives?: string[]; questi
 export function completionBrief(
   entries: { key: string; title: string; body: string; objectives?: string[]; questions?: { q: string; a: string }[]; exercise?: unknown; sources?: unknown[]; verified?: unknown; cannotFill?: Record<string, string> }[],
   basis = slotBasis(entries as any),
+  coverage?: Coverage,
 ): CompletionBrief {
   const wordsFor = new Map(basis.map((b) => [b.slot, b.medianWords]));
   const TOKENS_PER_WORD = 1.35;
@@ -293,11 +380,14 @@ export function completionBrief(
   }
   out.sort((a, b) => b.missing.length - a.missing.length || a.key.localeCompare(b.key));
   const measured = basis.filter((b) => b.from === 'measured').length;
+  const createWords = (coverage?.uncovered ?? []).reduce((n, c) => n + c.words, 0);
+  const createTokens = (coverage?.uncovered ?? []).reduce((n, c) => n + c.tokens, 0);
   return {
     basis,
     entries: out,
-    totalWords: out.reduce((n, e) => n + e.words, 0),
-    totalTokens: out.reduce((n, e) => n + e.tokens, 0),
+    coverage,
+    totalWords: out.reduce((n, e) => n + e.words, 0) + createWords,
+    totalTokens: out.reduce((n, e) => n + e.tokens, 0) + createTokens,
     method: [
       `Words per slot are the median of the entries that already have that slot; ${measured} of ${SLOTS.length} slots have at least one sample, the rest fall back to the measured counts of the first full entry.`,
       `Output tokens are words x ${TOKENS_PER_WORD}.`,
@@ -331,11 +421,15 @@ function n(x: number): string {
 export function briefMarkdown(project: string, brief: CompletionBrief, libraryRoot?: string): string {
   const L: string[] = [];
   L.push(`# Completion brief: ${project}`, '');
-  if (!brief.entries.length) {
-    L.push('Every entry is complete, or every empty slot is marked as one that cannot be filled here.', '');
+  const cov = brief.coverage;
+  if (!brief.entries.length && !cov?.uncovered.length) {
+    L.push('Every technology has an entry, and every entry is complete or says why a slot cannot be filled here.', '');
     return L.join('\n');
   }
-  L.push(`${brief.entries.length} entries are short of a slot. Estimated **${n(brief.totalTokens)} tokens** to finish all of them, ${n(brief.totalWords)} words of writing.`, '');
+  if (cov) {
+    L.push(`**Coverage: ${cov.covered} of ${cov.total} technologies have an entry.** ${cov.uncovered.length} have none.`, '');
+  }
+  L.push(`${brief.entries.length} existing ${brief.entries.length === 1 ? 'entry is' : 'entries are'} short of a slot. Estimated **${n(brief.totalTokens)} tokens** for everything below, ${n(brief.totalWords)} words of writing.`, '');
   L.push('## How that number was reached', '');
   for (const m of brief.method) L.push(`- ${m}`);
   L.push('');
@@ -346,6 +440,15 @@ export function briefMarkdown(project: string, brief: CompletionBrief, libraryRo
   L.push('- A slot that cannot be filled here goes under `cannot_fill:` with the reason, not left blank.');
   if (libraryRoot) L.push(`- Shared entries live in \`${libraryRoot}\`; a project lesson overlays one by naming it in \`extends:\`.`);
   L.push('');
+  if (cov && cov.uncovered.length) {
+    L.push('## Technologies with no entry at all', '');
+    L.push('These are named in `stack.md` and nothing explains them. Write each to the floor — what it is, why it is here, one diagram, how it works, two questions — and let the rest accumulate.', '');
+    for (const c of cov.uncovered) {
+      L.push(`- **${c.name}** (${c.category}) — suggest \`${c.suggestedKey}\`, about ${n(c.tokens)} tokens`);
+      if (c.why) L.push(`  - the stack says: ${c.why}`);
+    }
+    L.push('');
+  }
   L.push('## Entries, most incomplete first', '');
   for (const e of brief.entries) {
     L.push(`### ${e.title}`, '');

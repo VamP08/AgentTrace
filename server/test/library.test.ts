@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { briefEntries, completeness, completionBrief, encountersOf, readLibrary, resolveLesson, sections, slotBasis } from '../src/library.js';
+import { briefEntries, completeness, completionBrief, encountersOf, readLibrary, resolveLesson, sections, slotBasis, stackCoverage } from '../src/library.js';
 import type { LearningEntry, ProjectRecord } from '@agenttrace/shared';
 
 let root: string;
@@ -318,6 +318,59 @@ describe('briefEntries', () => {
     const e = completionBrief(briefEntries(record([orphan]))).entries.find((x) => x.key === 'learning/orphan')!;
     expect(e).toBeDefined();
     expect(e.missing).toContain('what-it-is');
+  });
+});
+
+describe('stackCoverage', () => {
+  const withStack = (rows: any[], learning: LearningEntry[] = []): ProjectRecord => ({
+    project: 'P', root: '', repoDir: '', learning, decisions: [], journal: [],
+    library: readLibrary(root).entries, unparsed: [],
+    stack: { data: { stack: rows }, body: '' } as any,
+  });
+
+  it('counts a technology whose stack row names a lesson that exists', () => {
+    const c = stackCoverage(withStack([{ name: 'Redis', learning: 'redis-caching' }], [lesson({ slug: 'redis-caching' })]), slotBasis([]))!;
+    expect(c.covered).toBe(1);
+    expect(c.uncovered).toHaveLength(0);
+  });
+
+  it('does not count a stack row whose named lesson does not exist', () => {
+    const c = stackCoverage(withStack([{ name: 'Redis', learning: 'never-written' }]), slotBasis([]))!;
+    expect(c.covered).toBe(0);
+    expect(c.uncovered[0].name).toBe('Redis');
+  });
+
+  it('counts a technology matched by name against a library entry', () => {
+    const c = stackCoverage(withStack([{ name: 'Rate Limiting' }]), slotBasis([]))!;
+    expect(c.covered).toBe(1);
+  });
+
+  it('lists a technology with nothing at all, and costs it at the floor', () => {
+    const basis = slotBasis(readLibrary(root).entries);
+    const c = stackCoverage(withStack([{ name: 'Apache POI', category: 'other', why: 'writes the workbook' }]), basis)!;
+    const poi = c.uncovered[0];
+    expect(poi.slots).toEqual(['what-it-is', 'why', 'picture', 'how-it-works', 'questions']);
+    expect(poi.why).toBe('writes the workbook');
+    expect(poi.suggestedKey).toBe('concept/apache-poi');
+  });
+
+  it('suggests the package namespace when the row carries a purl', () => {
+    const c = stackCoverage(withStack([{ name: 'chokidar', purl: 'pkg:npm/chokidar' }]), slotBasis([]))!;
+    expect(c.uncovered[0].suggestedKey).toBe('pkg/npm/chokidar/chokidar');
+  });
+
+  it('returns nothing for a project with no stack.md, rather than a coverage of zero', () => {
+    const bare: ProjectRecord = { project: 'P', root: '', repoDir: '', learning: [], decisions: [], journal: [], library: [], unparsed: [] };
+    expect(stackCoverage(bare, slotBasis([]))).toBeUndefined();
+  });
+
+  it('folds the cost of what is missing into the brief total', () => {
+    const basis = slotBasis(readLibrary(root).entries);
+    const rec = withStack([{ name: 'Apache POI' }, { name: 'Redis' }]);
+    const withoutCoverage = completionBrief(briefEntries(rec), basis);
+    const withCoverage = completionBrief(briefEntries(rec), basis, stackCoverage(rec, basis));
+    expect(withCoverage.totalTokens).toBeGreaterThan(withoutCoverage.totalTokens);
+    expect(withCoverage.coverage!.uncovered).toHaveLength(2);
   });
 });
 
