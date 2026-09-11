@@ -234,11 +234,57 @@ export interface CreateEstimate {
   tokens: number;
 }
 
+/** A concept this project uses that no lesson here anchors: the overlay is missing, not the entry. */
+export interface AnchorEstimate {
+  key: string;
+  title: string;
+  /** the stack row that points at it */
+  name: string;
+  words: number;
+  tokens: number;
+}
+
 export interface Coverage {
   /** technologies named in stack.md */
   total: number;
   covered: number;
   uncovered: CreateEstimate[];
+  /** entries the project uses but has not anchored in its own code */
+  unanchored: AnchorEstimate[];
+  /** which slots a first write actually contains here, and how that was worked out */
+  firstWriteSlots: SlotId[];
+  firstWriteBasis: string;
+}
+
+/**
+ * Which slots a first write actually contains, measured rather than assumed.
+ *
+ * The first version of this costed a new entry at the five required slots. Twenty-four entries
+ * were then written by a real session and every one arrived with eight — the floor plus sources,
+ * a run example and go-deeper — so the estimate came in at 2.12x under. A slot counts as part of
+ * a first write when more than half the entries written so far carry it: that way the number
+ * follows what sessions do instead of what the contract asks for, and it moves on its own as
+ * habits change.
+ */
+export function firstWriteSlots(entries: { body: string; objectives?: string[]; questions?: unknown[]; exercise?: unknown; sources?: unknown[]; verified?: unknown }[]): { slots: SlotId[]; basis: string } {
+  if (entries.length === 0) {
+    return { slots: [...REQUIRED_SLOTS], basis: 'no entries written yet, so a first write is costed at the five required slots' };
+  }
+  const seen = new Map<SlotId, number>();
+  for (const e of entries) {
+    for (const s of completeness(e).slots) {
+      if (s.state === 'written' && !COMPUTED_SLOTS.includes(s.slot)) seen.set(s.slot, (seen.get(s.slot) ?? 0) + 1);
+    }
+  }
+  const half = entries.length / 2;
+  const slots = SLOTS.filter((s) => !COMPUTED_SLOTS.includes(s) && (seen.get(s) ?? 0) > half);
+  // Never cost below the floor: a session may have written a run of thin entries, and the
+  // contract still asks for five.
+  for (const r of REQUIRED_SLOTS) if (!slots.includes(r)) slots.push(r);
+  return {
+    slots,
+    basis: `${slots.length} slots, being those present in more than half of the ${entries.length} entries written so far`,
+  };
 }
 
 export interface CompletionBrief {
@@ -284,8 +330,15 @@ export function stackCoverage(record: ProjectRecord, basis: SlotBasis[]): Covera
   const wordsFor = new Map(basis.map((b) => [b.slot, b.medianWords]));
   const TOKENS_PER_WORD = 1.35;
   const FETCH_TOKENS = 4000;
-  const floorWords = REQUIRED_SLOTS.reduce((n, s) => n + (wordsFor.get(s) ?? 0), 0);
+  const first = firstWriteSlots(record.library);
+  const firstWords = first.slots.reduce((n, s) => n + (wordsFor.get(s) ?? 0), 0);
+  // An overlay is two sections: why this project reached for it, and where to look in this code.
+  const anchorWords = (wordsFor.get('why') ?? 0) + 90;
 
+  const extended = new Set(
+    record.learning.flatMap((l) => (l.extends ? [l.extends, l.extends.split('/').pop() as string] : [])),
+  );
+  const unanchored: AnchorEstimate[] = [];
   const uncovered: CreateEstimate[] = [];
   let covered = 0;
   for (const row of rows) {
@@ -301,6 +354,19 @@ export function stackCoverage(record: ProjectRecord, basis: SlotBasis[]): Covera
       libSlugs.has(n);
     if (hit) {
       covered += 1;
+      // Covered by an entry is not the same as anchored in this project's code. An entry nobody
+      // here extends explains the technology in general and says nothing about where this
+      // repository used it, which is the half a reader of their own codebase actually wants.
+      const entry = record.library.find((e) => normalise(e.slug) === n || (purl && e.purl === purl) || (learning && (e.key === learning || normalise(e.slug) === normalise(learning))));
+      if (entry && !extended.has(entry.key) && !extended.has(entry.slug)) {
+        unanchored.push({
+          key: entry.key,
+          title: entry.title,
+          name,
+          words: anchorWords,
+          tokens: Math.round(anchorWords * TOKENS_PER_WORD),
+        });
+      }
       continue;
     }
     uncovered.push({
@@ -308,13 +374,13 @@ export function stackCoverage(record: ProjectRecord, basis: SlotBasis[]): Covera
       category: String((row as any)?.category ?? 'other'),
       why: (row as any)?.why ? String((row as any).why) : undefined,
       suggestedKey: purl ? `pkg/${purl.replace(/^pkg:/, '')}/${slugify(name)}` : `concept/${slugify(name)}`,
-      slots: [...REQUIRED_SLOTS],
-      words: floorWords,
+      slots: [...first.slots],
+      words: firstWords,
       // A new entry is read from nothing, so there is no re-read cost; sources are always fetched.
-      tokens: Math.round(floorWords * TOKENS_PER_WORD) + FETCH_TOKENS,
+      tokens: Math.round(firstWords * TOKENS_PER_WORD) + FETCH_TOKENS,
     });
   }
-  return { total: rows.length, covered, uncovered };
+  return { total: rows.length, covered, uncovered, unanchored, firstWriteSlots: first.slots, firstWriteBasis: first.basis };
 }
 
 function median(ns: number[]): number {
@@ -380,8 +446,10 @@ export function completionBrief(
   }
   out.sort((a, b) => b.missing.length - a.missing.length || a.key.localeCompare(b.key));
   const measured = basis.filter((b) => b.from === 'measured').length;
-  const createWords = (coverage?.uncovered ?? []).reduce((n, c) => n + c.words, 0);
-  const createTokens = (coverage?.uncovered ?? []).reduce((n, c) => n + c.tokens, 0);
+  const createWords = (coverage?.uncovered ?? []).reduce((n, c) => n + c.words, 0)
+    + (coverage?.unanchored ?? []).reduce((n, c) => n + c.words, 0);
+  const createTokens = (coverage?.uncovered ?? []).reduce((n, c) => n + c.tokens, 0)
+    + (coverage?.unanchored ?? []).reduce((n, c) => n + c.tokens, 0);
   return {
     basis,
     entries: out,
@@ -392,6 +460,10 @@ export function completionBrief(
       `Words per slot are the median of the entries that already have that slot; ${measured} of ${SLOTS.length} slots have at least one sample, the rest fall back to the measured counts of the first full entry.`,
       `Output tokens are words x ${TOKENS_PER_WORD}.`,
       `Input tokens are the entry re-read at the same rate, plus ${n(FETCH_TOKENS)} where a missing slot needs sources fetched.`,
+      coverage
+        ? `A technology with no entry is costed at ${coverage.firstWriteBasis}. An earlier version costed one at the five required slots and came in 2.12 times under, because real first writes arrive richer than the floor.`
+        : 'A technology with no entry is costed at what a first write actually contains, measured from the entries already written.',
+      'An entry the project uses but has not anchored is costed at two sections, why this project reached for it and where to look in this code, with no fetches, because the shared entry already carries the sources.',
       'The figure excludes the session\'s own reasoning and any code it runs to verify an example, so treat it as a floor rather than a forecast.',
     ],
   };
@@ -446,6 +518,20 @@ export function briefMarkdown(project: string, brief: CompletionBrief, libraryRo
     for (const c of cov.uncovered) {
       L.push(`- **${c.name}** (${c.category}) — suggest \`${c.suggestedKey}\`, about ${n(c.tokens)} tokens`);
       if (c.why) L.push(`  - the stack says: ${c.why}`);
+    }
+    L.push('');
+  }
+  if (cov && cov.unanchored.length) {
+    L.push('## Entries this project uses but has not anchored', '');
+    L.push(
+      'The shared entry explains the technology; nothing here says where **this** repository used it. '
+      + 'Write a short lesson in the record that names the entry in `extends:`, with `files:` and an `anchor:` '
+      + 'pointing at the real code, a `## Why here` saying why this project reached for it, and a '
+      + '`## Where to look` saying what to notice. Everything else is inherited, so these are two sections, not twelve.',
+      '',
+    );
+    for (const a of cov.unanchored) {
+      L.push(`- **${a.title}** — used for ${a.name}, extend \`${a.key}\`, about ${n(a.tokens)} tokens`);
     }
     L.push('');
   }

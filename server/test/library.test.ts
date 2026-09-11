@@ -322,6 +322,8 @@ describe('briefEntries', () => {
 });
 
 describe('stackCoverage', () => {
+  const REQUIRED = ['what-it-is', 'why', 'picture', 'how-it-works', 'questions'];
+
   const withStack = (rows: any[], learning: LearningEntry[] = []): ProjectRecord => ({
     project: 'P', root: '', repoDir: '', learning, decisions: [], journal: [],
     library: readLibrary(root).entries, unparsed: [],
@@ -345,13 +347,41 @@ describe('stackCoverage', () => {
     expect(c.covered).toBe(1);
   });
 
-  it('lists a technology with nothing at all, and costs it at the floor', () => {
+  it('lists a technology with nothing at all, and costs it at what first writes here actually contain', () => {
     const basis = slotBasis(readLibrary(root).entries);
     const c = stackCoverage(withStack([{ name: 'Apache POI', category: 'other', why: 'writes the workbook' }]), basis)!;
     const poi = c.uncovered[0];
-    expect(poi.slots).toEqual(['what-it-is', 'why', 'picture', 'how-it-works', 'questions']);
+    // Measured, not assumed: this fixture's entries are mostly complete, so a first write here
+    // is costed above the floor. Costing it at the floor is what came in 2.12x under on real data.
+    expect(poi.slots.length).toBeGreaterThan(REQUIRED.length);
+    expect(poi.slots).toEqual(expect.arrayContaining(REQUIRED));
+    expect(c.firstWriteBasis).toMatch(/more than half of the 3 entries/);
     expect(poi.why).toBe('writes the workbook');
     expect(poi.suggestedKey).toBe('concept/apache-poi');
+  });
+
+  it('falls back to the floor when nothing has been written to measure', () => {
+    const bare: ProjectRecord = {
+      project: 'P', root: '', repoDir: '', learning: [], decisions: [], journal: [], library: [], unparsed: [],
+      stack: { data: { stack: [{ name: 'Redis' }] }, body: '' } as any,
+    };
+    const c = stackCoverage(bare, slotBasis([]))!;
+    expect(c.firstWriteSlots).toEqual(REQUIRED);
+    expect(c.firstWriteBasis).toMatch(/no entries written yet/);
+  });
+
+  it('separates covered from anchored: an entry nobody here extends is unanchored', () => {
+    const basis = slotBasis(readLibrary(root).entries);
+    const noOverlay = stackCoverage(withStack([{ name: 'Rate Limiting' }]), basis)!;
+    expect(noOverlay.covered).toBe(1);
+    expect(noOverlay.uncovered).toHaveLength(0);
+    expect(noOverlay.unanchored.map((u) => u.key)).toEqual(['concept/rate-limiting']);
+
+    const withOverlay = stackCoverage(
+      withStack([{ name: 'Rate Limiting' }], [lesson({ slug: 'rl', extends: 'concept/rate-limiting' })]),
+      basis,
+    )!;
+    expect(withOverlay.unanchored).toHaveLength(0);
   });
 
   it('suggests the package namespace when the row carries a purl', () => {

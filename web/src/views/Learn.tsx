@@ -33,7 +33,7 @@ export function Learn({ base, cwd }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
-  const [tab, setTab] = useState<'learning' | 'library' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [tab, setTab] = useState<'learning' | 'library' | 'stack' | 'decisions' | 'journal' | 'docs'>('learning');
   const [brief, setBrief] = useState<string>();
   const [read, setRead] = useState<Set<string>>(new Set());
 
@@ -50,6 +50,22 @@ export function Learn({ base, cwd }: Props) {
   }, [base]);
 
   const ordered = useMemo(() => (record ? orderByPrerequisites(record.learning) : []), [record]);
+  /**
+   * Every technology the project says it uses, and what the record has for it. Three states, and
+   * the middle one is the point: an entry can explain a technology in general while nothing says
+   * where this repository used it. Counting that as covered is what made a project with four
+   * lessons look finished.
+   */
+  const stackRows = useMemo(() => {
+    const rows: any[] = (record?.stack?.data as any)?.stack ?? [];
+    const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return rows.filter((r) => r?.name).map((r) => {
+      const n = norm(String(r.name));
+      const entry = record?.library.find((e) => norm(e.slug) === n || (r.purl && e.purl === r.purl) || (r.learning && (e.key === r.learning || norm(e.slug) === norm(String(r.learning)))));
+      const lesson = record?.learning.find((l) => (r.learning && l.slug === r.learning) || (entry && l.extends && (l.extends === entry.key || entry.key.endsWith(`/${l.extends}`))));
+      return { name: String(r.name), category: String(r.category ?? 'other'), why: r.why ? String(r.why) : undefined, entry, lesson };
+    });
+  }, [record]);
   const entries = useMemo(() => ordered.filter((l) => type === 'all' || l.type === type), [ordered, type]);
   const entry = record?.learning.find((l) => l.slug === pick);
   const counts = useMemo(() => {
@@ -97,6 +113,7 @@ export function Learn({ base, cwd }: Props) {
   const tabs = {
     learning: `Lessons ${record.learning.length}`,
     library: `Library ${record.library.length}`,
+    stack: `Stack ${stackRows.length}`,
     decisions: `Decisions ${record.decisions.length}`,
     journal: `Journal ${record.journal.length}`,
     docs: `Documents ${docCount}`,
@@ -106,7 +123,7 @@ export function Learn({ base, cwd }: Props) {
     <div className="split rd-split">
       <aside className="files rd-rail">
         <div className="rd-tabs">
-          {(['learning', 'library', 'decisions', 'journal', 'docs'] as const).map((t) => (
+          {(['learning', 'library', 'stack', 'decisions', 'journal', 'docs'] as const).map((t) => (
             <button key={t} className={`btn sm ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
               {tabs[t]}
             </button>
@@ -162,6 +179,37 @@ export function Learn({ base, cwd }: Props) {
                 </button>
               );
             })
+          )
+        )}
+        {tab === 'stack' && (
+          stackRows.length === 0 ? (
+            <div className="rd-alert">
+              No <code>stack.md</code> in this record yet, so there is nothing to compare the lessons against.
+            </div>
+          ) : (
+            <>
+              <div className="rd-progress" aria-label="Technologies anchored in this project">
+                <span>{stackRows.filter((r) => r.lesson).length} of {stackRows.length} anchored here</span>
+                <i><b style={{ width: `${(stackRows.filter((r) => r.lesson).length / stackRows.length) * 100}%` }} /></i>
+              </div>
+              {stackRows.map((r) => (
+                <button
+                  key={r.name}
+                  className={`node rd-entry ${pick === `lib:${r.entry?.key}` ? 'sel' : ''}`}
+                  onClick={() => { if (r.lesson) { setTab('learning'); setPick(r.lesson.slug); } else if (r.entry) setPick(`lib:${r.entry.key}`); }}
+                  disabled={!r.entry && !r.lesson}
+                >
+                  <span className="rd-t">{r.name}</span>
+                  <span className="rd-m">
+                    {r.lesson
+                      ? `${r.category} · anchored in this project`
+                      : r.entry
+                        ? `${r.category} · explained, but not anchored here`
+                        : `${r.category} · nothing written yet`}
+                  </span>
+                </button>
+              ))}
+            </>
           )
         )}
         {tab === 'decisions' &&
