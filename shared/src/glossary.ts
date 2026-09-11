@@ -138,6 +138,7 @@ const MCP_ACTIONS: Record<string, ToolGloss> = {
   browser_take_screenshot: { what: 'Saves a picture of the page as it looks now.', look: 'The file it was saved to.' },
   browser_console_messages: { what: 'Reads the errors and logs the page itself printed.', look: 'Errors first; they explain a broken page.' },
   browser_network_requests: { what: 'Lists the requests the page made and what came back.', look: 'Any request that failed or returned an error status.' },
+  browser_network_request: { what: 'Reads one request the page made, with its response.', look: 'The status and the body that came back.' },
   browser_evaluate: { what: 'Runs a snippet of JavaScript inside the page and returns the result.', look: 'The snippet, then the value it returned.' },
   browser_wait_for: { what: 'Waits until something appears, disappears, or a set time passes.', look: 'What it is waiting for.' },
   browser_resize: { what: 'Changes the browser window size, usually to check a layout at another width.', look: 'The width and height.' },
