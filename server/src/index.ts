@@ -8,7 +8,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, Project, ProjectRecord, ServerMessage } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
-import { archiveSession, archiveStats, livePaths, loadSettings, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
+import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
 import { buildDossier, docDirsFor, documents, readDocument } from './dossier.js';
 import { briefEntries, briefMarkdown, completionBrief } from './library.js';
@@ -55,9 +55,22 @@ async function history(file: string, id: string): Promise<ParsedFile> {
 /** The record is the repository's own: its manifest at the root, or the registry's memory of it once the folder is gone. Never guessed from a session. */
 function recordFor(p: Project): ProjectRecord | undefined {
   const found = existsSync(join(p.root, 'agenttrace.json')) ? findManifest(p.root) : undefined;
-  if (found) return readRecordAt(found);
-  if (p.recordRoot && !p.recordMissing) return readRecordAt({ manifest: { contract: 1, project: p.name, record: p.recordRoot }, root: p.recordRoot, repoDir: p.root });
-  return undefined;
+  const record = found
+    ? readRecordAt(found)
+    : p.recordRoot && !p.recordMissing
+      ? readRecordAt({ manifest: { contract: 1, project: p.name, record: p.recordRoot }, root: p.recordRoot, repoDir: p.root })
+      : undefined;
+  // Keep a copy. The record is the one thing here a person edits and tidies, and a tidy-up is
+  // how one was lost; the archive is the second copy that a cleanup of its own folder cannot
+  // reach. Never read in preference to the original.
+  if (record) {
+    try {
+      archiveRecord(claudeRoot, record.project, record.root);
+    } catch {
+      // a failed copy must never stop the record being served
+    }
+  }
+  return record;
 }
 
 function text(res: ServerResponse, status: number, body: string) {

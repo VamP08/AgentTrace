@@ -86,6 +86,76 @@ function newerTree(from: string, to: string): boolean {
 }
 
 /** Count and size of everything archived, for the Setup screen. */
+/** Where AgentTrace keeps its copy of a project's record, one folder per project. */
+export function recordArchivePath(claudeRoot: string, project: string): string {
+  return join(archiveRoot(claudeRoot), 'records', project.replace(/[^A-Za-z0-9._-]+/g, '-'));
+}
+
+/**
+ * Copy a project's record into the archive. The record is the only thing AgentTrace reads that a
+ * person is expected to edit and tidy, and tidying is how forty-one files were once lost: the
+ * record sat inside a folder whose owner cleaned it. The ownership rule keeps the record out of
+ * anybody else's folders; this keeps a second copy in case the folder it owns is cleaned anyway.
+ *
+ * Markdown stays the source of truth — this is a copy, never read in preference to the original,
+ * and the original is restored from git or from here by a person, never silently by the app.
+ * Copies only when something changed, compared by newest modification time and total size, so an
+ * unchanged record costs one stat per file.
+ */
+export function archiveRecord(claudeRoot: string, project: string, recordRoot: string): boolean {
+  if (!project || !recordRoot || !existsSync(recordRoot)) return false;
+  const dest = recordArchivePath(claudeRoot, project);
+  const now = measure(recordRoot);
+  if (now.files === 0) return false; // an empty or vanished record never overwrites a good copy
+  const stampFile = join(dest, '.measure.json');
+  if (existsSync(stampFile)) {
+    try {
+      const was = JSON.parse(readFileSync(stampFile, 'utf8')) as { files: number; bytes: number; newest: number };
+      if (was.files === now.files && was.bytes === now.bytes && was.newest === now.newest) return false;
+    } catch {
+      // an unreadable stamp just means copying again
+    }
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  rmSync(dest, { recursive: true, force: true });
+  cpSync(recordRoot, dest, { recursive: true });
+  writeFileSync(stampFile, JSON.stringify({ ...now, from: recordRoot, at: new Date().toISOString() }, null, 2));
+  return true;
+}
+
+/** Files, total bytes and newest mtime under a folder: enough to tell a changed record from an unchanged one. */
+function measure(root: string): { files: number; bytes: number; newest: number } {
+  let files = 0;
+  let bytes = 0;
+  let newest = 0;
+  const walk = (dir: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (name === '.measure.json') continue;
+      const full = join(dir, name);
+      let s;
+      try {
+        s = statSync(full);
+      } catch {
+        continue;
+      }
+      if (s.isDirectory()) walk(full);
+      else {
+        files += 1;
+        bytes += s.size;
+        newest = Math.max(newest, Math.floor(s.mtimeMs));
+      }
+    }
+  };
+  walk(root);
+  return { files, bytes, newest };
+}
+
 export function archiveStats(claudeRoot: string): { sessions: number; bytes: number; root: string } {
   const root = archiveRoot(claudeRoot);
   let sessions = 0, bytes = 0;
