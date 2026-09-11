@@ -3,7 +3,7 @@
 // exercise with a hint and a solution. Progress is a per-browser "read" mark, nothing more.
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { CodeWindow, Completeness, LearningEntry, LibraryEntry, ProjectRecord } from '@agenttrace/shared';
-import { SLOT_LABELS, completeness, sections as splitSlots } from '@agenttrace/shared';
+import { COMPUTED_SLOTS, SLOT_LABELS, completeness, sections as splitSlots } from '@agenttrace/shared';
 import { Markdown, Code } from '../components/Markdown';
 import './read.css';
 
@@ -264,6 +264,26 @@ export function Learn({ base, cwd }: Props) {
                   <Markdown text={sec.body} onLink={openSlug} />
                 </section>
               ))}
+              {(() => {
+                // The computed slot: every lesson in this project that overlays this entry.
+                // Assembled, never authored, so it cannot go stale against the record.
+                const here = record.learning.filter((l) => l.extends === e.key || (l.extends && e.key.endsWith(`/${l.extends}`)));
+                if (!here.length) return <p className="rd-c">No project has anchored this entry yet.</p>;
+                return (
+                  <section>
+                    <h3>Where it shows up</h3>
+                    <ul>
+                      {here.map((l) => (
+                        <li key={l.slug}>
+                          <button className="rd-chip" onClick={() => { setTab('learning'); setPick(l.slug); }}>{record.project}</button>
+                          {l.files[0] ? <> — <code>{l.files[0]}</code></> : null}
+                          {l.anchor ? <> at <code>{l.anchor}</code></> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })()}
               {e.sources.length > 0 && (
                 <>
                   <h3>Sources</h3>
@@ -301,15 +321,24 @@ export function Learn({ base, cwd }: Props) {
 function Slots({ c }: { c: Completeness }) {
   return (
     <div className="rd-slots" aria-label={`${c.written} of ${c.fillable} slots written`}>
-      {c.slots.map((s) => (
-        <span
-          key={s.slot}
-          className={`rd-slot ${s.state}`}
-          title={s.state === 'unfillable' ? `Cannot be filled here: ${s.reason}` : s.state === 'written' ? 'Written' : 'Not written yet'}
-        >
-          {SLOT_LABELS[s.slot]}
-        </span>
-      ))}
+      {c.slots.map((s) => {
+        // The computed slot is assembled from the projects that use the entry, so it is neither
+        // written nor missing; showing it as empty would read as a job nobody has done.
+        const computed = COMPUTED_SLOTS.includes(s.slot);
+        const state = computed ? 'computed' : s.state;
+        const title = computed
+          ? 'Assembled from the projects that use this entry; never written by hand'
+          : s.state === 'unfillable'
+            ? `Cannot be filled here: ${s.reason}`
+            : s.state === 'written'
+              ? 'Written'
+              : 'Not written yet';
+        return (
+          <span key={s.slot} className={`rd-slot ${state}`} title={title}>
+            {SLOT_LABELS[s.slot]}
+          </span>
+        );
+      })}
     </div>
   );
 }

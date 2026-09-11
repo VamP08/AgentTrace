@@ -154,16 +154,22 @@ export function resolveLesson(lesson: LearningEntry, library: LibraryEntry[]): R
     };
   }
   const base = sections(entry.body);
-  const ownByTitle = new Map(own.map((s) => [s.title.toLowerCase(), s]));
+  // Key on the slot where a section has one, on the heading text where it does not. Keying on
+  // text alone lets two wordings of the same slot both survive — the library's "Why you would
+  // reach for it" and a lesson's "Why here" are the same section, and the reader must not get
+  // both. Keying on the slot is also what makes the merge deterministic without a model.
+  const keyOf = (s: Section) => s.slot ?? `title:${s.title.toLowerCase()}`;
+  const ownByKey = new Map(own.map((s) => [keyOf(s), s]));
   const origin: Record<string, 'library' | 'project'> = {};
   const merged: Section[] = [];
   for (const s of base) {
-    const replacement = ownByTitle.get(s.title.toLowerCase());
+    const replacement = ownByKey.get(keyOf(s));
     merged.push(replacement ?? s);
     origin[(replacement ?? s).title] = replacement ? 'project' : 'library';
   }
+  const baseKeys = new Set(base.map(keyOf));
   for (const s of own) {
-    if (base.some((b) => b.title.toLowerCase() === s.title.toLowerCase())) continue;
+    if (baseKeys.has(keyOf(s))) continue;
     merged.push(s);
     origin[s.title] = 'project';
   }
@@ -349,6 +355,40 @@ export function briefMarkdown(project: string, brief: CompletionBrief, libraryRo
     L.push('');
   }
   return L.join('\n');
+}
+
+/**
+ * What the brief should measure: library entries as they are, and project lessons **after** the
+ * overlay is resolved. Measuring an overlay on its own reports it as missing every slot the
+ * library already supplies, which would ask a session to rewrite what it can already read — and
+ * an overlay is thin by design, so it would never stop being reported.
+ */
+export function briefEntries(record: ProjectRecord): { key: string; title: string; body: string; objectives?: string[]; questions?: { q: string; a: string }[]; exercise?: unknown; sources?: unknown[]; verified?: unknown; cannotFill?: Record<string, string> }[] {
+  const out = record.library.map((e) => ({ ...e }));
+  for (const l of record.learning) {
+    if (!l.extends) {
+      out.push({ ...l, key: `learning/${l.slug}` } as any);
+      continue;
+    }
+    const r = resolveLesson(l, record.library);
+    if (!r.entry) {
+      // The overlay names an entry that is not there; measure it alone and let the brief say so.
+      out.push({ ...l, key: `learning/${l.slug}` } as any);
+      continue;
+    }
+    out.push({
+      ...l,
+      key: `learning/${l.slug}`,
+      body: r.sections.map((s) => `## ${s.title}\n\n${s.body}`).join('\n\n'),
+      objectives: l.objectives?.length ? l.objectives : r.entry.objectives,
+      questions: l.questions?.length ? l.questions : r.entry.questions,
+      exercise: l.exercise ?? r.entry.exercise,
+      sources: l.sources?.length ? l.sources : r.entry.sources,
+      verified: l.verified ?? r.entry.verified,
+      cannotFill: { ...r.entry.cannotFill, ...l.cannotFill },
+    } as any);
+  }
+  return out;
 }
 
 /** Every project lesson that extends a given library entry, for the computed "where it shows up". */

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { completeness, completionBrief, encountersOf, readLibrary, resolveLesson, sections, slotBasis } from '../src/library.js';
+import { briefEntries, completeness, completionBrief, encountersOf, readLibrary, resolveLesson, sections, slotBasis } from '../src/library.js';
 import type { LearningEntry, ProjectRecord } from '@agenttrace/shared';
 
 let root: string;
@@ -194,6 +194,29 @@ describe('resolveLesson', () => {
     expect(r.origin['Where to look']).toBe('project');
   });
 
+  it('replaces a section that fills the same slot under a different heading', () => {
+    // The library says "Why you would reach for it"; the lesson says "Why here". Same slot, and
+    // the reader must get one of them, not both.
+    const r = resolveLesson(
+      lesson({ extends: 'concept/rate-limiting', body: '## Why here\n\nbecause this repo needed it' }),
+      library(),
+    );
+    const whys = r.sections.filter((s) => s.slot === 'why');
+    expect(whys).toHaveLength(1);
+    expect(whys[0].title).toBe('Why here');
+    expect(whys[0].body).toBe('because this repo needed it');
+    expect(r.origin['Why here']).toBe('project');
+    expect(r.origin['Why you would reach for it']).toBeUndefined();
+  });
+
+  it('still keys unslotted sections by their heading text', () => {
+    const r = resolveLesson(
+      lesson({ extends: 'concept/rate-limiting', body: '## Where to look\n\nours' }),
+      library(),
+    );
+    expect(r.sections.filter((s) => s.title === 'Where to look')).toHaveLength(1);
+  });
+
   it('matches the extends key by slug as well as by full path', () => {
     expect(resolveLesson(lesson({ extends: 'rate-limiting' }), library()).entry!.key).toBe('concept/rate-limiting');
   });
@@ -263,6 +286,38 @@ describe('completionBrief', () => {
       { key: 'b', title: 'b', body: '## What it is\n\nx', cannotFill: { sources: 'offline', 'go-deeper': 'offline' } },
     ]).entries[0];
     expect(withSources.tokens).toBeGreaterThan(noSources.tokens);
+  });
+});
+
+describe('briefEntries', () => {
+  const record = (learning: LearningEntry[]): ProjectRecord => ({
+    project: 'P', root: '', repoDir: '', learning, decisions: [], journal: [],
+    library: readLibrary(root).entries, unparsed: [],
+  });
+
+  it('measures an overlay after the merge, not on its own', () => {
+    // The overlay carries one section. Measured alone it looks empty; measured resolved it
+    // inherits everything the library entry already has.
+    const overlay = lesson({ slug: 'rl', extends: 'concept/rate-limiting', body: '## Why here\n\nours' });
+    const alone = completionBrief([{ key: 'x', title: 'x', body: overlay.body }]).entries[0];
+    expect(alone.missing.length).toBeGreaterThan(8);
+
+    const resolved = completionBrief(briefEntries(record([overlay]))).entries;
+    expect(resolved.find((e) => e.key === 'learning/rl')).toBeUndefined();
+  });
+
+  it('measures a lesson with no extends exactly as it is', () => {
+    const plain = lesson({ slug: 'plain', body: '## What it is\n\nonly this' });
+    const e = completionBrief(briefEntries(record([plain]))).entries.find((x) => x.key === 'learning/plain')!;
+    expect(e.missing).toContain('cheat-sheet');
+    expect(e.missing).toContain('questions');
+  });
+
+  it('measures an overlay whose library entry is missing on its own, rather than crashing', () => {
+    const orphan = lesson({ slug: 'orphan', extends: 'concept/not-here', body: '## Why here\n\nours' });
+    const e = completionBrief(briefEntries(record([orphan]))).entries.find((x) => x.key === 'learning/orphan')!;
+    expect(e).toBeDefined();
+    expect(e.missing).toContain('what-it-is');
   });
 });
 

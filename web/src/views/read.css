@@ -619,3 +619,4 @@ p.rd-a,
 .rd-slot.unfillable { color: var(--ink-3); border-style: dotted; text-decoration: line-through; }
 .rd-brief { margin-top: var(--s-section); border-top: 1px solid var(--hairline); padding-top: var(--s-l); }
 .rd-briefrow { padding: 0 var(--s-rail-gutter) var(--s-s); }
+.rd-slot.computed { color: var(--ink-2); border-style: solid; border-color: var(--hairline); font-style: italic; }
