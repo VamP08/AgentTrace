@@ -384,7 +384,8 @@ pre.diff .add, pre.diff .del { color: var(--ink); display: inline-block; width: 
 
 /* ---------- context view ---------- */
 .explainer { padding: 20px 24px 8px; max-width: 68ch; }
-.explainer h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.explainer h3 { display: flex; align-items: center; gap: 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+.explainer h3 .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .explainer p { margin: 0 0 10px; font-size: 15px; line-height: 1.65; color: var(--ink-2); }
 .explainer .now-grid { border-top: 1px solid var(--hairline); }
 .ctx-table { padding: 0 24px 40px; }
@@ -469,6 +470,20 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
    word, not a colour: the palette spends its one hue on selection and focus, and a kind is not a
    state. */
 .dg { padding: 16px 24px 0; max-width: 88ch; }
+/* One column until there is room for two. The side column holds what was asked and why; the main
+   column holds what changed, which is the longest list and wants the width. */
+.dg-cols { display: grid; }
+.dg-cols > div { min-width: 0; }
+@media (min-width: 1120px) {
+  .dg-cols { grid-template-columns: 340px minmax(0, 1fr); gap: 0 24px; padding: 0 24px; align-items: start; }
+  .dg-cols .dg { padding-left: 0; padding-right: 0; max-width: none; }
+  /* In a 340px column the three-part row collapses to one word per line. Stack it instead: the
+     chip and the title on one line, the reason under it, two lines of it. */
+  .dg-side .dg-notes li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; }
+  .dg-side .dg-notes .kind { grid-row: 1; }
+  .dg-side .dg-notes .t { grid-column: 2; }
+  .dg-side .dg-notes .c { grid-column: 2; margin-left: 0; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
 .dg h3 { display: flex; align-items: center; gap: 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
 .dg h3 .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
 .dg .now-p.small { margin: 0 0 8px; font-size: 11px; }

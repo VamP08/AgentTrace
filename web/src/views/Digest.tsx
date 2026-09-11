@@ -20,6 +20,7 @@ export function Digest({ sessionId, live, batches }: Props) {
   const [allAsked, setAllAsked] = useState(false);
   const [allCommits, setAllCommits] = useState(false);
   const [allWrote, setAllWrote] = useState(false);
+  const [how, setHow] = useState(false);
 
   // A live session is re-read every ten batches, the same cadence the header uses.
   const tick = Math.floor(batches / 10);
@@ -43,12 +44,22 @@ export function Digest({ sessionId, live, batches }: Props) {
   return (
     <div className="scroll">
       <section className="explainer" aria-label="How to read this">
-        <h3>What changed, and why</h3>
-        <p>
-          Everything on this page was read from files the session left behind: the prompts from the transcript, the changes
-          from the file backups the coding tool saved, the commits from git, and the reasoning from the project's record.
-          Nothing here was summarised by a model, because this app runs none.
-        </p>
+        {/* The prose is read once and then never again, and it was costing the first screen the one
+            thing the screen is for: the list of what changed. Same rule the tool cards already
+            follow — explanation on demand, not on every load. */}
+        <h3>
+          What changed, and why
+          <button className="btn sm quiet" onClick={() => setHow(!how)} aria-expanded={how}>
+            {how ? 'Hide how this is built' : 'How this is built'}
+          </button>
+        </h3>
+        {how && (
+          <p>
+            Everything on this page was read from files the session left behind: the prompts from the transcript, the changes
+            from the file backups the coding tool saved, the commits from git, and the reasoning from the project's record.
+            Nothing here was summarised by a model, because this app runs none.
+          </p>
+        )}
         <div className="now-grid">
           <div className="stat"><b>{d.counts.turns}</b><span>{plural(d.counts.turns, 'thing asked', 'things asked')}</span></div>
           <div className="stat"><b>{d.counts.files}</b><span>{plural(d.counts.files, 'file touched', 'files touched')}</span></div>
@@ -58,20 +69,26 @@ export function Digest({ sessionId, live, batches }: Props) {
         </div>
       </section>
 
+      {/* Two columns on a wide screen, for the gate rather than for looks: with everything in one
+          column the list of what changed started below the fold on any session with more than a
+          handful of files, which is the one thing this screen exists to show. Source order is the
+          reading order, and below 1120px it is the only order. */}
+      <div className="dg-cols">
+      <div className="dg-side">
       <section className="dg" aria-labelledby="dg-asked">
         <h3 id="dg-asked">Asked</h3>
         {d.asked.length === 0 ? (
           <p className="now-p">Nothing was typed in this session.</p>
         ) : (
           <ol className="dg-asked">
-            {(allAsked ? d.asked : d.asked.slice(0, 3)).map((a, i) => (
+            {(allAsked ? d.asked : d.asked.slice(0, 2)).map((a, i) => (
               <li key={i}>{a}</li>
             ))}
           </ol>
         )}
-        {d.asked.length > 3 && (
+        {d.asked.length > 2 && (
           <button className="btn sm quiet" onClick={() => setAllAsked(!allAsked)}>
-            {allAsked ? 'Show the first three' : `Show all ${d.asked.length}`}
+            {allAsked ? 'Show the first two' : `Show all ${d.asked.length}`}
           </button>
         )}
       </section>
@@ -79,9 +96,9 @@ export function Digest({ sessionId, live, batches }: Props) {
       <section className="dg" aria-labelledby="dg-why">
         <h3 id="dg-why">
           Why
-          {d.wrote.length > 6 && (
+          {d.wrote.length > 4 && (
             <button className="btn sm quiet" onClick={() => setAllWrote(!allWrote)}>
-              {allWrote ? 'Show the first six' : `Show all ${d.wrote.length}`}
+              {allWrote ? 'Show the first four' : `Show all ${d.wrote.length}`}
             </button>
           )}
         </h3>
@@ -89,7 +106,7 @@ export function Digest({ sessionId, live, batches }: Props) {
           <p className="now-p">{d.missing.find((m) => m.includes('record')) ?? 'No record entry names this session.'}</p>
         ) : (
           <ul className="dg-notes">
-            {(allWrote ? d.wrote : d.wrote.slice(0, 6)).map((w) => (
+            {(allWrote ? d.wrote : d.wrote.slice(0, 4)).map((w) => (
               <li key={`${w.kind}:${w.project}:${w.id}`}>
                 <span className="kind">{w.kind}</span>
                 <span className="t">{w.title}</span>
@@ -100,6 +117,8 @@ export function Digest({ sessionId, live, batches }: Props) {
         )}
       </section>
 
+      </div>
+      <div className="dg-main">
       <section className="dg" aria-labelledby="dg-changed">
         <h3 id="dg-changed">
           Changed
@@ -177,6 +196,8 @@ export function Digest({ sessionId, live, batches }: Props) {
           </ul>
         </section>
       )}
+      </div>
+      </div>
     </div>
   );
 }
