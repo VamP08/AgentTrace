@@ -20,22 +20,83 @@ The project's record root is named in `agenttrace.json` at the root of the proje
 { "contract": 1, "project": "AgentTrace", "record": "e:/Work/Live/code/Project/docs/AgentTrace" }
 ```
 
-If the file is missing, ask where the record should live before writing anything. Offer these
-three, in this order, and say what each costs:
+**If `agenttrace.json` is missing, stop and ask the owner for a path. This is a hard stop, not a
+preference.** Write nothing — not a folder, not a first lesson, not a placeholder — until they
+have answered. Choosing on their behalf is what put a record inside somebody's own documentation
+and got it deleted; see the ownership rule below.
 
-1. **Inside the repository**, at `agenttrace/`. The lessons travel with the code and are reviewed
-   in the same pull request. Cost: they are public if the repository is public, so nothing
-   sensitive can go in them.
-2. **A sibling folder**, at `../<Project>-notes/`. Private by default, still next to the code.
-   Cost: a second folder to back up, and it is easy to forget when the repository is cloned.
-3. **One notes repository for every project**, at `<path>/<Project>/`. Everything in one place,
-   versioned together, private. Cost: the notes live away from the code they describe.
+Ask it plainly, in one question, and say why it is being asked:
 
-Write the answer into `agenttrace.json` and continue. Never guess: the choice decides whether
-these files can be published, and only the owner knows that.
+> Where should this project's learning record live? It needs a folder of its own that nothing
+> else writes to — not inside a folder where you keep your own notes or documentation, because
+> a later tidy-up of those would take the record with them. A path like
+> `<somewhere you keep private notes>/agenttrace-record/<Project>/` works well. What should it be?
 
-The record folder belongs to this contract and to nothing else. Two rules protect what the owner
-already keeps:
+Then, before writing anything to the answer:
+
+1. **Check it is unclaimed.** List the path and every parent up to the repository or drive root.
+   If any of them holds a file this contract did not write, say so, explain that a cleanup of
+   that folder would take the record, and ask for a different path. Do not proceed on a folder
+   somebody else is using, however convenient it looks.
+2. **Confirm it back.** Name the exact absolute path and say plainly: everything the record
+   writes goes here and nowhere else, and this folder is now the owner's to keep — if it is
+   moved or deleted, the record goes with it.
+3. **Record that they chose it.** Write the path into `agenttrace.json` together with
+   `chosen_by: owner` and the date. That line is the audit trail: it says the location was
+   answered for, not assumed.
+
+```json
+{
+  "contract": 1,
+  "project": "HRMS",
+  "record": "e:/Work/Live/code/Project/docs/agenttrace-record/HRMS",
+  "library": "e:/Work/Live/code/Project/docs/agenttrace-record/library",
+  "chosen_by": "owner",
+  "chosen_at": "2026-09-11"
+}
+```
+
+**Keep asking until they decide.** One question that goes unanswered is not a decision, and it
+must not become a default by exhaustion. While `agenttrace.json` is missing, ask again at the
+end of **every** response in that repository — briefly after the first time, one line, not the
+full question again:
+
+> Still no record path for this project. Say where it should live and the record starts from the
+> next turn; everything before it goes unrecorded.
+
+Ask on every prompt, for as long as it takes, including across sessions. Do not stop after three
+attempts, do not decide it must not be wanted, and do not quietly proceed — a session that stops
+asking has chosen "no record" on the owner's behalf, which is the same fault as choosing a path
+on their behalf.
+
+Two answers end it. A path ends it, and the record starts. **"No record for this project" also
+ends it** — write `{"contract": 1, "project": "<Name>", "record": null, "declined_at": "<date>"}`
+and never ask again for that repository unless the owner reopens it. Silence is not that answer.
+
+Never guess, and never fall back to a default. Work not recorded while the question is open is
+lost to the record, and that is the correct price: it costs notes. Guessing costs the whole
+record, later, silently.
+
+**The record root is a folder the record owns completely.** This is the rule the other two
+depend on, and it is the one that has actually failed in practice. A record was once placed at
+`docs/HRMS/agenttrace/`, a subfolder of the folder where the owner kept their own HRMS
+documentation. The name did not clash, so the clash rule below was satisfied. Months later the
+owner asked a session to clean up the HRMS docs, and the whole record went with them —
+forty-one files, including every lesson and every decision.
+
+So: **never put the record inside a folder that holds documents somebody else authored, at any
+depth.** Being in a subfolder is not protection; a cleanup, a move or a reorganisation of the
+parent takes the child. Before choosing a root, list the candidate folder and its parents up to
+the repository root. If any of them holds a file this contract did not write, the candidate is
+not a record root. Go up to a level nobody has claimed and make a dedicated folder there —
+`agenttrace-record/<Project>/` — so a person tidying their own notes for that project never has
+the record in the blast radius.
+
+The owner is not prevented from cleaning up their own documentation, and must not be. The record
+simply has to be somewhere that is not part of what they are cleaning.
+
+The record folder belongs to this contract and to nothing else. Two more rules protect what the
+owner already keeps:
 
 - **Never touch a file the contract does not name.** Do not move, rename, merge, rewrite or
   delete the project's existing documents, wherever they are, and do not copy them into the
@@ -44,8 +105,11 @@ already keeps:
   one file. Before the first write, list the chosen folder. If it already holds any file or
   folder whose name matches a record name ignoring case (`roadmap.md`, `stack.md`,
   `architecture.md`, `design.md`, `gaps.md`, `learning`, `decisions`, `journal`) that this
-  contract did not write, put the record in a subfolder named `agenttrace` inside it, name that
-  subfolder in `agenttrace.json`, and say so. Never overwrite.
+  contract did not write, **the folder is already somebody else's and is not a record root.**
+  Do not burrow into a subfolder of it — that is what put a record inside the owner's own docs
+  and got it deleted. Apply the ownership rule: go up to an unclaimed level, make
+  `agenttrace-record/<Project>/` there, name it in `agenttrace.json`, and say so. Never
+  overwrite, and never share a parent with documents somebody else maintains.
 
 Then register it, so the app can still find the record if this folder is later moved or deleted:
 
@@ -459,7 +523,10 @@ than one with eight guessed ones.
 - Same turn as the code. An entry written later loses the reasoning that was live at the time.
 - One concept, one file. Search the folder for the slug and for the title words before creating.
 - Frontmatter must parse as YAML. Quote strings that contain colons. Dates carry a timezone.
-- Never write the session id, model name, or anything about the assistant into the record. The
-  record reads as the project owner's own notes.
+- Never write a model name, an assistant name, or any phrasing implying the record had a
+  non-human author. The record reads as the project owner's own notes.
+- The `session:` field is the exception, and it is required. A session id is a join key naming a
+  file already on this machine, not attribution: it says nothing about which model ran, or that
+  one ran at all. AgentTrace uses it to link an entry to the turn that produced it.
 - Never invent a "why" you do not have. If the reason is "the user asked for it", write that.
 - Keep `updated` on the single-file documents current. AgentTrace uses it to know what changed.
