@@ -209,6 +209,15 @@ describe('search', () => {
     expect(hit.snippet).not.toContain('Something else');
   });
 
+  it('puts the thing an id names above entries that merely mention it', () => {
+    // as on the real record: the journal's title says G17, the gap's title does not, only its id does
+    const r = search(buildIndex([record('Ids', {
+      journal: [journal({ slug: '2026-09-28-2245', summary: 'G17 fixed by measurement' })],
+      gaps: { updated: '', body: '**G17.** The server waits.', data: { gaps: [{ id: 'G17', title: 'The server blocks on its own archiving', severity: 'high', status: 'fixed', found: '2026-09-11', files: [] }] } },
+    })]), 'G17');
+    expect(r.hits[0]).toMatchObject({ kind: 'gap', id: 'G17' });
+  });
+
   it('finds a milestone by its id and links the sessions that served it', () => {
     const hit = search(index, 'M1').hits.find((h) => h.kind === 'milestone')!;
     expect(hit.links.filter((l) => l.kind === 'journal').map((l) => l.id)).toEqual(['2026-09-03-1042']);

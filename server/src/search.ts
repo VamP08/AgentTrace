@@ -364,6 +364,9 @@ function scoreDoc(doc: Doc, ts: string[], phrase: string): { score: number; matc
   }
   // a multi-word query that appears intact is a much better answer than the same words scattered
   if (ts.length > 1) for (const f of doc.fields) if (f.text.includes(phrase)) score += f.weight;
+  // Typing a thing's own id — G17, M9, a slug — means that thing. Without this a journal entry whose
+  // title mentions G17 outranked the gap named G17, since a title outweighs an id.
+  if (doc.id.toLowerCase() === phrase) score += 20;
   // A stack row is one line that is entirely "what this is and why it is here", so when it matches
   // at all it is the shortest true answer. A lesson teaches the same thing at length and comes
   // next. A journal entry only mentions the thing in passing, and gets no bump.
