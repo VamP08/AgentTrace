@@ -8,7 +8,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, DigestCommit, Event, Project, ProjectRecord, ServerMessage, Session } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
-import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, sweepArchive, MIN_CAP_BYTES } from './archive.js';
+import { archiveRecord, archiveRoot, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, sweepArchive, MIN_CAP_BYTES } from './archive.js';
 import { buildIndex, search, type Index as SearchIndex } from './search.js';
 import { buildDigest } from './digest.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
@@ -200,7 +200,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   try {
     // Anything not under /api is the built page (see the static block below); API paths never reach it.
     if (parts[0] !== 'api') return serveStatic(url.pathname, res);
-    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: (archiveCounted ??= archiveStats(claudeRoot)) });
+    // Never counted here: before the first sweep has counted, the page says so. Walking the archive on
+    // this request took 5 to 9 s on a busy machine and made the first Setup visit wait 48 s.
+    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: archiveCounted ?? { root: archiveRoot(claudeRoot) } });
     if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
       if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
       mkdirSync(join(skillTarget, '..'), { recursive: true });
@@ -460,8 +462,9 @@ export function start(p: number = port): Promise<string> {
   const tailer = new Tailer(join(claudeRoot, 'projects')).start();
   tailer.on('error', (e) => console.error('tailer', e));
   attachWebSocket(server, tailer);
-  // the first sweep waits a few seconds so the first page load is not queued behind it
-  scheduleSweep(5_000);
+  // The first sweep waits for the tailer's initial scan to finish, and then a few seconds more, so the
+  // three walks of a start — the watcher's, the sweep's and the first page load's — do not overlap.
+  void tailer.ready.then(() => scheduleSweep(5_000));
   return new Promise((ok) => server.listen(p, '127.0.0.1', () => ok(`http://127.0.0.1:${p}`)));
 }
 

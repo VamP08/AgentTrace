@@ -11,7 +11,8 @@ interface Status {
   hookInstaller: string;
   snippet: string;
   manifestExample: string;
-  archive: { sessions: number; bytes: number; root: string };
+  /** sessions and bytes are absent until the server's first archive sweep has counted them */
+  archive: { sessions?: number; bytes?: number; root: string };
 }
 
 /** What a prune did: the sessions it deleted, the size it stopped at, and what it refused to touch. */
@@ -131,8 +132,8 @@ export function Setup({ onClose }: { onClose: () => void }) {
             <h3>1. Where sessions are read from</h3>
             <p>Transcripts are read from <code>{st.projectsDir}</code>. To read a different folder, start the server with <code>CLAUDE_CONFIG_DIR</code> set to the folder that holds <code>projects</code>.</p>
 
-            <h3>Your copy of every session <span className="pill ok">{st.archive.sessions} archived</span></h3>
-            <p>The coding tool deletes transcripts after its retention period, 30 days unless changed. AgentTrace copies each session it indexes, with its helpers and file history, into <code>{st.archive.root}</code> ({(st.archive.bytes / 1e6).toFixed(0)} MB), and keeps reading from that copy after the original is gone. Nothing you have opened here is lost to cleanup.</p>
+            <h3>Your copy of every session <span className="pill ok">{st.archive.sessions === undefined ? 'still counting' : `${st.archive.sessions} archived`}</span></h3>
+            <p>The coding tool deletes transcripts after its retention period, 30 days unless changed. AgentTrace copies each session it indexes, with its helpers and file history, into <code>{st.archive.root}</code> ({st.archive.bytes === undefined ? 'its size is counted a few seconds after the server starts' : `${(st.archive.bytes / 1e6).toFixed(0)} MB`}), and keeps reading from that copy after the original is gone. Nothing you have opened here is lost to cleanup.</p>
             <p>You can set a size the copy is not allowed to pass. When it goes over, AgentTrace deletes whole sessions, the oldest first, and only ones whose original is still on this machine. A session whose original is already gone is never deleted, because this copy is the only one left — even if that leaves the folder over the size you set.</p>
             <div className="rd-cap">
               <label htmlFor="cap-gb">Keep it under</label>

@@ -104,8 +104,10 @@ export async function sweepArchive(claudeRoot: string, sessions: Session[], repo
   const t2 = Date.now();
   const cap = loadSettings(claudeRoot).archiveCapBytes;
   if (cap !== null) timed('prune', () => pruneArchive(claudeRoot, cap));
-  const stats = timed('count', () => archiveStats(claudeRoot));
-  const summary = `archive sweep: ${copied} of ${sessions.length} sessions copied in ${t1 - t0} ms, ${logs} of ${repoRoots.length} logs refreshed in ${t2 - t1} ms, ${Date.now() - t0} ms in all; slowest step ${slowest.ms} ms (${slowest.what})`;
+  const tc = Date.now();
+  const stats = await countArchive(claudeRoot);
+  const counted = Date.now() - tc;
+  const summary = `archive sweep: ${copied} of ${sessions.length} sessions copied in ${t1 - t0} ms, ${logs} of ${repoRoots.length} logs refreshed in ${t2 - t1} ms, counted in ${counted} ms (sliced), ${Date.now() - t0} ms in all; slowest single step ${slowest.ms} ms (${slowest.what})`;
   return { copied, stats, summary };
 }
 
@@ -198,22 +200,42 @@ export function measure(root: string): { files: number; bytes: number; newest: n
   return { files, bytes, newest };
 }
 
+/** Every file in the archive, with the folder it sits in and its size. */
+function* archiveFiles(dir: string): Generator<{ name: string; dir: string; size: number }> {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    const st = statSync(p);
+    if (st.isDirectory()) yield* archiveFiles(p);
+    else yield { name, dir, size: st.size };
+  }
+}
+
+const isTranscript = (f: { name: string; dir: string }) => f.name.endsWith('.jsonl') && basename(dirname(f.dir)) === 'projects';
+
 export function archiveStats(claudeRoot: string): { sessions: number; bytes: number; root: string } {
   const root = archiveRoot(claudeRoot);
   let sessions = 0, bytes = 0;
-  const walk = (dir: string) => {
-    if (!existsSync(dir)) return;
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name);
-      const st = statSync(p);
-      if (st.isDirectory()) walk(p);
-      else {
-        bytes += st.size;
-        if (name.endsWith('.jsonl') && basename(dirname(dir)) === 'projects') sessions++;
-      }
-    }
-  };
-  walk(root);
+  for (const f of archiveFiles(root)) {
+    bytes += f.size;
+    if (isTranscript(f)) sessions++;
+  }
+  return { sessions, bytes, root };
+}
+
+/**
+ * The same count, handing the event loop back every two hundred files. The walk is some 6,000 stats
+ * and took 5 to 9 s in one piece on a busy machine — the longest hold left in the sweep once
+ * everything else was sliced.
+ */
+async function countArchive(claudeRoot: string): Promise<ReturnType<typeof archiveStats>> {
+  const root = archiveRoot(claudeRoot);
+  let sessions = 0, bytes = 0, n = 0;
+  for (const f of archiveFiles(root)) {
+    bytes += f.size;
+    if (isTranscript(f)) sessions++;
+    if (++n % 200 === 0) await new Promise((r) => setImmediate(r));
+  }
   return { sessions, bytes, root };
 }
 
