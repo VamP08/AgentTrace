@@ -53,7 +53,7 @@ describe('Tailer', () => {
     const batches: TailBatch[] = [];
     tailer = new Tailer(projects).start();
     tailer.on('events', (b: TailBatch) => batches.push(b));
-    await new Promise((r) => setTimeout(r, 1700)); // let the watcher settle past its startup window
+    await tailer.ready;
 
     // pre-existing content must not be replayed
     expect(batches).toEqual([]);
@@ -79,6 +79,32 @@ describe('Tailer', () => {
     const b3 = await waitFor(() => batches.find((b) => b.agentId === 'ab12'));
     expect(b3.events[0]).toMatchObject({ id: 's1', sessionId: SID, agentId: 'ab12' });
 
+    rmSync(root, { recursive: true, force: true });
+  }, 15000);
+
+  // The bug this guards: "pre-existing" used to mean "reported in the first 1.5 s". A scan slower
+  // than that — 6,500 files on a busy machine — replayed every transcript it reported late, from
+  // byte zero. Blocking the event loop through the scan makes every report late.
+  it('never replays a pre-existing file, however long the initial scan takes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-tail-slow-'));
+    const dir = join(root, 'projects', 'slug');
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < 20; i++) writeFileSync(join(dir, `${SID.slice(0, -2)}${String(i).padStart(2, '0')}.jsonl`), rec(`old${i}`, 'already there') + '\n');
+
+    const batches: TailBatch[] = [];
+    tailer = new Tailer(join(root, 'projects')).start();
+    tailer.on('events', (b: TailBatch) => batches.push(b));
+    const until = Date.now() + 2000;
+    while (Date.now() < until) {
+      // hold the event loop past any fixed window, so the scan's reports all arrive late
+    }
+    await tailer.ready;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(batches).toEqual([]);
+
+    // and a file that does arrive after the scan still streams from its first byte
+    writeFileSync(join(dir, `${SID.slice(0, -2)}99.jsonl`), rec('fresh', 'new session') + '\n');
+    await waitFor(() => batches.find((b) => b.events.some((e) => e.id === 'fresh')));
     rmSync(root, { recursive: true, force: true });
   }, 15000);
 });

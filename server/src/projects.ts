@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Event, MiscSession, Project, ProjectDetail, ProjectIndex, Session, SessionLink } from '@agenttrace/shared';
 import { discoverSessions } from './discover.js';
-import { archiveLog, archiveSession, loadSettings, pruneArchive } from './archive.js';
 import { findManifest } from './docs.js';
 import { keyOf, loadRegistry, lookup, saveRegistry, upsert, type Registry } from './repos.js';
 import { parseFile } from './parse.js';
@@ -73,6 +72,38 @@ export function canon(p: string): string {
 }
 
 /**
+ * Git's own repository discovery, without starting git: walk up to the first `.git`. A directory
+ * means that folder is the working copy. A file means a worktree or a submodule: it names a gitdir,
+ * and a worktree's gitdir holds a `commondir` leading back to the main repository, whose parent is
+ * the working copy every worktree of it belongs to. A submodule's gitdir has no `commondir` and is
+ * its own repository. Returns null outside any repository, and undefined for a layout it does not
+ * recognise, which is left to git.
+ *
+ * This exists because starting git costs 60 to 480 ms per call on this machine — `git --version`
+ * alone took 280 — and a warm project-index pass spent 20.6 s of its 27.9 in these calls, blocking
+ * every request meanwhile. The walk is a handful of stat calls.
+ */
+export function repoRootByWalk(start: string): string | null | undefined {
+  for (let dir = resolve(start); ; ) {
+    const dotgit = join(dir, '.git');
+    const st = statSync(dotgit, { throwIfNoEntry: false });
+    if (st?.isDirectory()) return dir;
+    if (st?.isFile()) {
+      const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotgit, 'utf8'));
+      if (!m) return undefined;
+      const gitdir = resolve(dir, m[1].trim());
+      const commondir = join(gitdir, 'commondir');
+      if (!existsSync(commondir)) return dir;
+      const common = resolve(gitdir, readFileSync(commondir, 'utf8').trim());
+      return /[\\/]\.git$/i.test(common) ? dirname(common) : undefined;
+    }
+    const up = dirname(dir);
+    if (up === dir) return null;
+    dir = up;
+  }
+}
+
+/**
  * The git repository a folder belongs to, or null. A folder that no longer exists is answered
  * from its nearest surviving ancestor, so work in a folder renamed since still lands on its
  * repository. Cached per folder.
@@ -96,8 +127,8 @@ export function repoOf(dir: string): string | null {
     if (up === probe) break;
     probe = up;
   }
-  let root: string | null = null;
-  if (existsSync(probe)) {
+  let root: string | null | undefined = existsSync(probe) ? repoRootByWalk(probe) : null;
+  if (root === undefined && existsSync(probe)) {
     try {
       // The common git dir is shared by every worktree of a repository; its parent is the main
       // working copy. Asking for the top level alone would make each worktree its own project.
@@ -112,6 +143,8 @@ export function repoOf(dir: string): string | null {
     }
   }
   const out = root ? canon(root) : null;
+  // ponytail: a walk that finds `.git` answers even where git would refuse (safe.directory
+  // ownership checks); for attributing edits to a repository that is the right answer.
   repoCache.set(dir, out);
   return out;
 }
@@ -120,26 +153,34 @@ const rootCommitCache = new Map<string, string | undefined>();
 /** The first commit of a repository: the same in every clone and worktree, and there before any push. */
 export function rootCommitOf(root: string): string | undefined {
   if (rootCommitCache.has(root)) return rootCommitCache.get(root);
-  let sha: string | undefined;
-  try {
-    sha = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim().split('\n').pop() || undefined;
-  } catch {
-    sha = undefined;
+  // The first commit never changes once it exists, so the registry's answer is final and git is
+  // only asked for a repository it has not seen, or one with no commit yet. Each git start costs
+  // 60 to 480 ms here, and this was asked for every repository on every project-index request.
+  let sha = registry.repos[keyOf(root)]?.rootCommit;
+  if (!sha) {
+    try {
+      sha = execFileSync('git', ['rev-list', '--max-parents=0', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim().split('\n').pop() || undefined;
+    } catch {
+      sha = undefined;
+    }
   }
-  sha ??= registry.repos[keyOf(root)]?.rootCommit;
   rootCommitCache.set(root, sha);
   return sha;
 }
 
 export function remoteOf(root: string): string | undefined {
   if (remoteCache.has(root)) return remoteCache.get(root);
-  let url: string | undefined;
-  try {
-    url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || undefined;
-  } catch {
-    url = undefined;
+  // Registry first, for the same reason as rootCommitOf. A repository with no remote is still
+  // asked each time, since pushing it is exactly the change that makes it a GitHub project.
+  // ponytail: an origin re-pointed at a different URL is not noticed; clear the registry entry.
+  let url = registry.repos[keyOf(root)]?.remote;
+  if (!url) {
+    try {
+      url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim() || undefined;
+    } catch {
+      url = undefined;
+    }
   }
-  url ??= registry.repos[keyOf(root)]?.remote;
   remoteCache.set(root, url);
   return url;
 }
@@ -239,8 +280,19 @@ function manifestsFor(sessions: Session[]): { repoDir: string; root: string }[] 
   return [...seen.values()];
 }
 
+// Requests that arrive while a pass is running share it. Without this each poll started its own
+// full pass, and under the page's polling six were measured running at once, all over the same files.
+let inflight: Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> | undefined;
+
 /** Facts for every session, reusing cached entries whose transcript has not changed. */
-export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
+export function buildFacts(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
+  inflight ??= buildFactsOnce(claudeRoot).finally(() => {
+    inflight = undefined;
+  });
+  return inflight;
+}
+
+async function buildFactsOnce(claudeRoot: string): Promise<{ facts: Map<string, SessionFacts>; sessions: Map<string, Session> }> {
   const sessions = discoverSessions(claudeRoot);
   useRegistry(loadRegistry(claudeRoot));
   const manifests = manifestsFor(sessions);
@@ -254,10 +306,9 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
   const loaded = loadIndex(claudeRoot);
   const cached: IndexFile = loaded.manifests === manifestKey ? (loaded.sessions ?? {}) : {};
   const next: IndexFile = {};
+  // Copying into the archive is not done here. It used to be, "cheap when nothing changed" — which
+  // on 1,949 sessions was nine seconds of stat walks per request. sweepArchive does it on a timer.
   for (const s of sessions) {
-    // Every session that gets indexed also gets copied, so it outlives the coding tool's cleanup.
-    // Cheap when nothing changed: a size comparison per file.
-    archiveSession(claudeRoot, s);
     const hit = cached[s.id];
     if (hit && hit.bytes === s.bytes && hit.updatedAt === s.updatedAt) {
       next[s.id] = hit;
@@ -268,9 +319,6 @@ export async function buildFacts(claudeRoot: string): Promise<{ facts: Map<strin
   }
   saveIndex(claudeRoot, next, manifestKey);
   rememberRepos(claudeRoot, next);
-  // The pass has just copied everything it indexed; if a size limit is set, trim back to it now.
-  const cap = loadSettings(claudeRoot).archiveCapBytes;
-  if (cap !== null) pruneArchive(claudeRoot, cap);
   return { facts: new Map(Object.entries(next)), sessions: new Map(sessions.map((s) => [s.id, s])) };
 }
 
@@ -286,9 +334,8 @@ function rememberRepos(claudeRoot: string, facts: IndexFile) {
     if (!existsSync(root)) continue;
     const manifest = existsSync(join(root, 'agenttrace.json')) ? findManifest(root) : undefined;
     upsert(registry, { root, remote: remoteOf(root), rootCommit: rootCommitOf(root), record: manifest?.root, project: manifest?.manifest.project, seen: now });
-    // The default-branch log goes into the archive beside the sessions, so a repository whose
-    // folder is later deleted keeps its commits. One rev-parse per pass when nothing moved.
-    archiveLog(claudeRoot, root);
+    // The default-branch log is archived by the sweep, not here: one git start per repository per
+    // request was 3.5 s of every pass.
   }
   saveRegistry(claudeRoot, registry);
 }

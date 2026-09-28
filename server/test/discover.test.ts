@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { discoverAgents, discoverSessions } from '../src/discover.js';
@@ -45,5 +45,54 @@ describe('discoverAgents', () => {
     expect(agents).toEqual([
       { agentId: 'abc123', agentType: 'Explore', description: 'Look', toolUseId: 'toolu_9', spawnDepth: 1, file: 'subagents/agent-abc123.jsonl' },
     ]);
+  });
+});
+
+// Every call used to open and read the head and tail of every transcript on the machine — 71 s of a
+// 180 s profile over ~2,000 files. An unchanged file is now described once.
+describe('discoverSessions cache', () => {
+  it('does not re-read a transcript whose size and mtime are unchanged, and does re-read one that grew', () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-disc-cache-'));
+    const dir = join(root, 'projects', 'slug');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, '99999999-2222-3333-4444-555555555555.jsonl');
+    const line = (t: string) => JSON.stringify({ type: 'ai-title', aiTitle: t }) + '\n';
+    const fixed = new Date('2026-09-01T00:00:00.000Z');
+    writeFileSync(file, line('Title AAAA'));
+    utimesSync(file, fixed, fixed);
+    expect(discoverSessions(root)[0].title).toBe('Title AAAA');
+
+    // same length, same mtime: the cached description stands, which proves the file was not read
+    writeFileSync(file, line('Title BBBB'));
+    utimesSync(file, fixed, fixed);
+    expect(discoverSessions(root)[0].title).toBe('Title AAAA');
+
+    // it grows: read again
+    appendFileSync(file, line('Title CCCC'));
+    const s = discoverSessions(root)[0];
+    expect(s.title).toBe('Title CCCC');
+    expect(s.live).toBe(true);
+  });
+
+  // A cold listing read every file in one synchronous hold, 8.7 to 17.8 s after each restart. The
+  // cache is kept on disk so a restart — here, reading another root and coming back — starts warm.
+  it('survives a restart through the copy on disk', () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-disc-disk-'));
+    const dir = join(root, 'projects', 'slug');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, '88888888-2222-3333-4444-555555555555.jsonl');
+    const line = (t: string) => JSON.stringify({ type: 'ai-title', aiTitle: t }) + '\n';
+    const fixed = new Date('2026-09-01T00:00:00.000Z');
+    writeFileSync(file, line('Disk AAAA'));
+    utimesSync(file, fixed, fixed);
+    expect(discoverSessions(root)[0].title).toBe('Disk AAAA');
+    expect(existsSync(join(root, 'agenttrace', 'sessions-described.json'))).toBe(true);
+
+    discoverSessions(mkdtempSync(join(tmpdir(), 'at-disc-other-'))); // the in-memory cache now holds another root
+
+    // same length, same mtime: only a description read back from disk can still say AAAA
+    writeFileSync(file, line('Disk BBBB'));
+    utimesSync(file, fixed, fixed);
+    expect(discoverSessions(root)[0].title).toBe('Disk AAAA');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, appendFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { archiveSession, archiveStats } from '../src/archive.js';
@@ -39,5 +39,29 @@ describe('archive', () => {
     expect(discoverAgents(gone[0].dir).map((a) => a.agentType)).toEqual(['Explore']);
     expect(archiveSession(root, gone[0])).toBe(false); // an archived copy is never copied onto itself
     expect(archiveStats(root)).toMatchObject({ sessions: 1 });
+    // looking one session up by id finds the archived copy too, without listing every session
+    expect(findSession(root, id)).toMatchObject({ id, archived: true });
+  });
+
+  // A session's folder used to be recopied whole whenever any one file in it grew.
+  it('copies only the files in a session folder that differ', () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-archive-delta-'));
+    const live = join(root, 'projects', 'e--Work-demo');
+    const sub = join(live, id, 'subagents');
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(live, `${id}.jsonl`), line(1));
+    writeFileSync(join(sub, 'agent-a.jsonl'), 'aaaa\n');
+    writeFileSync(join(sub, 'agent-b.jsonl'), 'bbbb\n');
+    expect(archiveSession(root, findSession(root, id)!)).toBe(true);
+
+    // mark the archived copy of the helper that will not change; same size, so only a recopy would undo it
+    const copyOfA = join(root, 'agenttrace', 'archive', 'projects', 'e--Work-demo', id, 'subagents', 'agent-a.jsonl');
+    writeFileSync(copyOfA, 'MARK\n');
+    appendFileSync(join(sub, 'agent-b.jsonl'), 'more\n');
+    expect(archiveSession(root, findSession(root, id)!)).toBe(true);
+
+    expect(readFileSync(copyOfA, 'utf8')).toBe('MARK\n');
+    expect(readFileSync(join(root, 'agenttrace', 'archive', 'projects', 'e--Work-demo', id, 'subagents', 'agent-b.jsonl'), 'utf8')).toBe('bbbb\nmore\n');
+    rmSync(root, { recursive: true, force: true });
   });
 });

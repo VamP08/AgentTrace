@@ -2,7 +2,7 @@
 // the coding tool's own projects folder, and AgentTrace's archive of sessions it has indexed.
 // The live copy wins while it exists; the archive answers once the tool has cleaned up.
 // Title, cwd and start time come from the first and last 64KB of each transcript.
-import { readdirSync, statSync, openSync, readSync, closeSync, existsSync, readFileSync } from 'node:fs';
+import { readdirSync, statSync, openSync, readSync, closeSync, existsSync, readFileSync, mkdirSync, writeFileSync, type Stats } from 'node:fs';
 import { join, basename } from 'node:path';
 import type { AgentInfo, Session } from '@agenttrace/shared';
 import { archiveRoot, livePaths } from './archive.js';
@@ -10,8 +10,47 @@ import { archiveRoot, livePaths } from './archive.js';
 const LIVE_WINDOW_MS = 30_000;
 const PEEK_BYTES = 64 * 1024;
 
+// Each transcript's description as of its size and mtime. Everything in it comes from the file's
+// first and last 64 KB, so an unchanged file needs no second look. Without this every call opened
+// and read ~2,000 files — 71 s of a 180 s profile — and it is called by every session request, by
+// the page's fifteen-second poll, by the index pass and by the archive sweep. Rebuilt on each call
+// from the files actually seen, so a deleted transcript drops out.
+let described = new Map<string, { size: number; mtimeMs: number; session: Session }>();
+
+// The same cache on disk, so a restart does not begin cold. A cold listing reads every file and took
+// 8.7 to 17.8 s in one synchronous hold, measured, which was the longest stall left in the server and
+// the first thing anyone opening the app waited for. Written at most once a minute, and only after a
+// listing described something new; a cache, so a missing or broken file only costs time.
+let loadedFrom: string | undefined;
+const savedAt = new Map<string, number>();
+const describedFile = (claudeRoot: string) => join(claudeRoot, 'agenttrace', 'sessions-described.json');
+
+function loadDescribed(claudeRoot: string) {
+  if (loadedFrom === claudeRoot) return;
+  loadedFrom = claudeRoot;
+  try {
+    described = new Map(Object.entries(JSON.parse(readFileSync(describedFile(claudeRoot), 'utf8'))));
+  } catch {
+    described = new Map();
+  }
+}
+
+function saveDescribed(claudeRoot: string) {
+  if (Date.now() - (savedAt.get(claudeRoot) ?? 0) < 60_000) return;
+  savedAt.set(claudeRoot, Date.now());
+  try {
+    mkdirSync(join(claudeRoot, 'agenttrace'), { recursive: true });
+    writeFileSync(describedFile(claudeRoot), JSON.stringify(Object.fromEntries(described)));
+  } catch {
+    // a cache; failing to write it costs the next start some time and nothing else
+  }
+}
+
 export function discoverSessions(claudeRoot: string): Session[] {
+  loadDescribed(claudeRoot);
+  const before = described;
   const byId = new Map<string, Session>();
+  const seen = new Map<string, { size: number; mtimeMs: number; session: Session }>();
   const scan = (root: string, archived: boolean) => {
     const projectsDir = join(root, 'projects');
     if (!existsSync(projectsDir)) return;
@@ -29,7 +68,7 @@ export function discoverSessions(claudeRoot: string): Session[] {
         const id = basename(name, '.jsonl');
         if (archived && byId.has(id)) continue; // the live copy is already listed
         try {
-          byId.set(id, describeSession(slug, archived, livePaths(root, slug, id)));
+          byId.set(id, describeCached(slug, archived, livePaths(root, slug, id), seen));
         } catch {
           // unreadable file: skip rather than fail the whole list
         }
@@ -38,16 +77,47 @@ export function discoverSessions(claudeRoot: string): Session[] {
   };
   scan(claudeRoot, false);
   scan(archiveRoot(claudeRoot), true);
+  described = seen;
+  // a new or changed transcript produced a fresh description object; unchanged ones reused the old
+  if ([...seen].some(([file, v]) => before.get(file)?.session !== v.session)) saveDescribed(claudeRoot);
   return [...byId.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
 
-export function findSession(claudeRoot: string, id: string): Session | undefined {
-  return discoverSessions(claudeRoot).find((s) => s.id === id);
+/** The description of one transcript, from the cache when its size and mtime are unchanged. */
+function describeCached(slug: string, archived: boolean, paths: { file: string; dir: string; fileHistory: string }, into: typeof described): Session {
+  const st = statSync(paths.file);
+  const hit = described.get(paths.file);
+  const session = hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs ? hit.session : describeSession(slug, archived, paths, st);
+  into.set(paths.file, { size: st.size, mtimeMs: st.mtimeMs, session });
+  // live depends on the clock, not the file, so it is worked out fresh every time
+  return { ...session, live: !archived && Date.now() - st.mtimeMs < LIVE_WINDOW_MS };
 }
 
-function describeSession(projectSlug: string, archived: boolean, paths: { file: string; dir: string; fileHistory: string }): Session {
+/**
+ * One session by id: look for its file under each project folder, live copy first, then the
+ * archive. It used to list every session and pick one out, which is ~2,000 stats, and opening a
+ * session asks for it four times. `id` must already be validated as a session id by the caller.
+ */
+export function findSession(claudeRoot: string, id: string): Session | undefined {
+  loadDescribed(claudeRoot);
+  for (const [root, archived] of [[claudeRoot, false], [archiveRoot(claudeRoot), true]] as const) {
+    const projectsDir = join(root, 'projects');
+    if (!existsSync(projectsDir)) continue;
+    for (const slug of readdirSync(projectsDir)) {
+      const paths = livePaths(root, slug, id);
+      if (!existsSync(paths.file)) continue;
+      try {
+        return describeCached(slug, archived, paths, described);
+      } catch {
+        // unreadable: keep looking, as the full listing would have skipped it
+      }
+    }
+  }
+  return undefined;
+}
+
+function describeSession(projectSlug: string, archived: boolean, paths: { file: string; dir: string; fileHistory: string }, st: Stats): Session {
   const { file } = paths;
-  const st = statSync(file);
   const head = peek(file, 0, Math.min(PEEK_BYTES, st.size));
   const tail = st.size > PEEK_BYTES ? peek(file, st.size - PEEK_BYTES, PEEK_BYTES) : head;
   const id = basename(file, '.jsonl');

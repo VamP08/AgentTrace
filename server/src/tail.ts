@@ -40,6 +40,10 @@ export function classify(projectsDir: string, file: string): { projectSlug: stri
 export class Tailer extends EventEmitter {
   private files = new Map<string, FileState>();
   private watcher?: FSWatcher;
+  /** true once chokidar has reported every file that existed at start */
+  private scanned = false;
+  /** resolves when the initial scan is over; anything added after it is new content */
+  ready: Promise<void> = Promise.resolve();
 
   constructor(private projectsDir: string) {
     super();
@@ -49,6 +53,17 @@ export class Tailer extends EventEmitter {
     // ponytail: files that already exist start at their current size; the gap between this stat
     // and the watcher attaching is a few ms and history comes over HTTP anyway.
     this.watcher = chokidar.watch(this.projectsDir, { ignoreInitial: false, persistent: true });
+    // The end of the initial scan is chokidar's 'ready', not a clock. It used to be "the first
+    // 1.5 s", and a scan of 6,500 files takes far longer than that — so every transcript reported
+    // after the window was treated as new and read from byte zero, and each start re-parsed most
+    // of 2.4 GB of JSONL on the event loop. Measured: the trivial /api/setup stalled 4 to 28 s at a
+    // time for the first 170 s after every start.
+    this.ready = new Promise((ok) =>
+      this.watcher!.once('ready', () => {
+        this.scanned = true;
+        ok();
+      }),
+    );
     this.watcher.on('add', (file) => this.onAdd(file));
     this.watcher.on('change', (file) => this.onChange(file));
     this.watcher.on('unlink', (file) => this.onUnlink(file));
@@ -70,16 +85,10 @@ export class Tailer extends EventEmitter {
     } catch {
       return;
     }
-    // A file created after start is new content: read from zero. Pre-existing: skip to the end.
-    const fresh = this.ready;
+    // A file created after the initial scan is new content: read from zero. Pre-existing: skip to the end.
+    const fresh = this.scanned;
     this.files.set(file, { offset: fresh ? 0 : size, partial: '' });
     if (fresh) this.onChange(file);
-  }
-
-  private startedAt = Date.now();
-  /** chokidar reports pre-existing files as 'add' during its initial scan; treat the first 1.5s as that scan. */
-  private get ready(): boolean {
-    return Date.now() - this.startedAt > 1500;
   }
 
   private onChange(file: string) {

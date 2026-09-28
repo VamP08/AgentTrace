@@ -44,7 +44,10 @@ function sizeOf(p: string): number {
 
 /**
  * Copy a live session into the archive if the copy is missing or behind. Transcripts only ever
- * grow, so a size difference means new lines. Folders are copied whole; they are small.
+ * grow, so a size difference means new lines. In the session's folders only the files that differ
+ * are copied. They used to be copied whole whenever any one file in them had grown, on the belief
+ * that they are small; a live session's folder of helper transcripts and spilled tool results was
+ * recopied on every change, 17 s of a 180 s profile.
  * Returns true when something was written. A session pruned under the current size limit is
  * skipped, or every pass would copy back what the last one deleted.
  */
@@ -58,31 +61,70 @@ export function archiveSession(claudeRoot: string, s: Pick<Session, 'archived' |
       copyFileSync(s.file, to.file);
       wrote = true;
     }
-    if (existsSync(s.dir) && newerTree(s.dir, to.dir)) {
-      cpSync(s.dir, to.dir, { recursive: true, force: true });
-      wrote = true;
-    }
-    if (s.fileHistory && existsSync(s.fileHistory) && newerTree(s.fileHistory, to.fileHistory)) {
-      cpSync(s.fileHistory, to.fileHistory, { recursive: true, force: true });
-      wrote = true;
-    }
+    if (existsSync(s.dir) && copyNewer(s.dir, to.dir)) wrote = true;
+    if (s.fileHistory && existsSync(s.fileHistory) && copyNewer(s.fileHistory, to.fileHistory)) wrote = true;
   } catch {
     // an archive failure must never break reading the live session
   }
   return wrote;
 }
 
-/** True when any file under `from` is missing or larger in `to`'s copy. Cheap: names and sizes only. */
-function newerTree(from: string, to: string): boolean {
+/**
+ * Copy every session that changed, then prune under the size limit, then count what the archive
+ * holds. This used to run inline on every project-index request, where it was 54% of a 17-second
+ * poll on 1,949 sessions; the HTTP server could answer nothing else meanwhile. Now it runs on a
+ * timer, and yields to the event loop between sessions so a request waits for one copy at most.
+ *
+ * ponytail: one session's copy still blocks for as long as it takes — a 33 MB transcript is tens of
+ * milliseconds. If that ever shows up in a measurement, swap copyFileSync for fs.promises.copyFile.
+ */
+export async function sweepArchive(claudeRoot: string, sessions: Session[], repoRoots: string[] = []): Promise<{ copied: number; stats: ReturnType<typeof archiveStats>; summary: string }> {
+  // Each step is timed and the slowest named, because every step here is synchronous and one slow
+  // one is a stall for every request: the line in the server log is how that gets found.
+  let slowest = { what: '', ms: 0 };
+  const timed = <T>(what: string, fn: () => T): T => {
+    const t = Date.now();
+    const out = fn();
+    if (Date.now() - t > slowest.ms) slowest = { what, ms: Date.now() - t };
+    return out;
+  };
+  const t0 = Date.now();
+  let copied = 0;
+  for (const s of sessions) {
+    if (timed(`copy ${s.id}`, () => archiveSession(claudeRoot, s))) copied++;
+    await new Promise((r) => setImmediate(r));
+  }
+  const t1 = Date.now();
+  // each repository's default-branch log, so its commits outlive a deleted working copy
+  let logs = 0;
+  for (const root of repoRoots) {
+    if (existsSync(root) && timed(`log ${root}`, () => archiveLog(claudeRoot, root))) logs++;
+    await new Promise((r) => setImmediate(r));
+  }
+  const t2 = Date.now();
+  const cap = loadSettings(claudeRoot).archiveCapBytes;
+  if (cap !== null) timed('prune', () => pruneArchive(claudeRoot, cap));
+  const stats = timed('count', () => archiveStats(claudeRoot));
+  const summary = `archive sweep: ${copied} of ${sessions.length} sessions copied in ${t1 - t0} ms, ${logs} of ${repoRoots.length} logs refreshed in ${t2 - t1} ms, ${Date.now() - t0} ms in all; slowest step ${slowest.ms} ms (${slowest.what})`;
+  return { copied, stats, summary };
+}
+
+/** Copy each file under `from` that is missing from `to` or a different size there. Names and sizes only; true when anything was written. */
+function copyNewer(from: string, to: string): boolean {
+  let wrote = false;
   for (const name of readdirSync(from)) {
     const a = join(from, name);
     const b = join(to, name);
     const st = statSync(a);
     if (st.isDirectory()) {
-      if (!existsSync(b) || newerTree(a, b)) return true;
-    } else if (sizeOf(b) !== st.size) return true;
+      if (copyNewer(a, b)) wrote = true;
+    } else if (sizeOf(b) !== st.size) {
+      mkdirSync(to, { recursive: true });
+      copyFileSync(a, b);
+      wrote = true;
+    }
   }
-  return false;
+  return wrote;
 }
 
 /** Count and size of everything archived, for the Setup screen. */

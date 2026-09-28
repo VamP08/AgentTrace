@@ -8,7 +8,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, DigestCommit, Event, Project, ProjectRecord, ServerMessage, Session } from '@agenttrace/shared';
 import { discoverAgents, discoverSessions, findSession } from './discover.js';
-import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, MIN_CAP_BYTES } from './archive.js';
+import { archiveRecord, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, sweepArchive, MIN_CAP_BYTES } from './archive.js';
 import { buildIndex, search, type Index as SearchIndex } from './search.js';
 import { buildDigest } from './digest.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
@@ -45,6 +45,31 @@ const SESSION_ID = /^[0-9a-f-]{36}$/;
 
 // ponytail: per-session set of technologies already reported, so live batches only add new ones.
 const stackSeen = new Map<string, Set<string>>();
+
+// What the archive holds, as of the last sweep. Counting it walks the whole archive — 1.3 s over
+// 2.4 GB — so the Setup screen reads this rather than walking on every visit.
+let archiveCounted: ReturnType<typeof archiveStats> | undefined;
+// One pending copy per live session; see the tailer handler.
+const archiveDue = new Map<string, ReturnType<typeof setTimeout>>();
+const SWEEP_EVERY_MS = 5 * 60_000;
+
+/** Copy what changed into the archive, then again in five minutes. Never on a request. */
+function scheduleSweep(delay: number) {
+  setTimeout(async () => {
+    try {
+      const roots = Object.values(loadRegistry(claudeRoot).repos).map((e) => e.root);
+      const t = Date.now();
+      const sessions = discoverSessions(claudeRoot);
+      const listed = Date.now() - t;
+      const swept = await sweepArchive(claudeRoot, sessions, roots);
+      archiveCounted = swept.stats;
+      console.log(`${new Date().toISOString()} ${swept.summary}; listing sessions took ${listed} ms`);
+    } catch (e) {
+      console.error('archive sweep', e);
+    }
+    scheduleSweep(SWEEP_EVERY_MS);
+  }, delay).unref();
+}
 
 /** Parse the main transcript and append derived stack events; resets the live seen-set for the session. */
 async function history(file: string, id: string): Promise<ParsedFile> {
@@ -175,7 +200,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
   try {
     // Anything not under /api is the built page (see the static block below); API paths never reach it.
     if (parts[0] !== 'api') return serveStatic(url.pathname, res);
-    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: archiveStats(claudeRoot) });
+    if (parts[1] === 'setup' && parts.length === 2) return json(res, 200, { ...setupStatus(), archive: (archiveCounted ??= archiveStats(claudeRoot)) });
     if (parts[1] === 'setup' && parts[2] === 'skill' && req.method === 'POST') {
       if (!existsSync(skillSource)) return json(res, 500, { error: 'skill/SKILL.md missing from the AgentTrace checkout' });
       mkdirSync(join(skillTarget, '..'), { recursive: true });
@@ -202,7 +227,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
     if (parts[1] === 'archive' && parts[2] === 'prune' && parts.length === 3 && req.method === 'POST') {
       const cap = loadSettings(claudeRoot).archiveCapBytes;
       if (cap === null) return json(res, 400, { error: 'no size limit is set' });
-      return json(res, 200, pruneArchive(claudeRoot, cap));
+      const pruned = pruneArchive(claudeRoot, cap);
+      archiveCounted = undefined; // the count is stale the moment anything is deleted
+      return json(res, 200, pruned);
     }
     // ---- end archive size limit ----
     // ---- search over every record on this machine ----
@@ -408,8 +435,15 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
   });
 
   tailer.on('events', (b: TailBatch) => {
-    // a live session that changed is copied again, so the archive never lags by more than one batch
-    archiveSession(claudeRoot, { archived: false, projectSlug: b.projectSlug, id: b.sessionId, ...livePaths(claudeRoot, b.projectSlug, b.sessionId) });
+    // A live session is copied again at most once every thirty seconds. It used to be copied on every
+    // batch, which for a 33 MB transcript meant the whole file several times a minute, synchronously,
+    // while every socket and request waited. The archive now lags a live session by thirty seconds.
+    if (!archiveDue.has(b.sessionId)) {
+      archiveDue.set(b.sessionId, setTimeout(() => {
+        archiveDue.delete(b.sessionId);
+        archiveSession(claudeRoot, { archived: false, projectSlug: b.projectSlug, id: b.sessionId, ...livePaths(claudeRoot, b.projectSlug, b.sessionId) });
+      }, 30_000).unref());
+    }
     const seen = stackSeen.get(b.sessionId);
     const events = seen && !b.agentId ? [...b.events, ...detectStack(b.events, seen)] : b.events;
     for (const [ws, sid] of wants) if (sid === b.sessionId) send(ws, { type: 'events', sessionId: b.sessionId, agentId: b.agentId, events });
@@ -426,6 +460,8 @@ export function start(p: number = port): Promise<string> {
   const tailer = new Tailer(join(claudeRoot, 'projects')).start();
   tailer.on('error', (e) => console.error('tailer', e));
   attachWebSocket(server, tailer);
+  // the first sweep waits a few seconds so the first page load is not queued behind it
+  scheduleSweep(5_000);
   return new Promise((ok) => server.listen(p, '127.0.0.1', () => ok(`http://127.0.0.1:${p}`)));
 }
 
