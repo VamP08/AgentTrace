@@ -1,5 +1,8 @@
 {
-  "name": "agenttrace",
+  "name": "@vamp08/agenttrace",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.1.0",
   "description": "Live, explained view of a Claude Code session: what went in, what came out, and why.",
   "license": "MIT",
