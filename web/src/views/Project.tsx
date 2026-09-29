@@ -8,13 +8,22 @@ import './read.css';
 
 type Tab = 'Overview' | 'Learn' | 'Documents';
 
+/** An entry of the record to open: what kind, which one, and a stamp so the same one can be asked for twice. */
+export interface RecordFocus {
+  kind: string;
+  id: string;
+  n: number;
+}
+
 interface Props {
   id: string;
+  /** set when something elsewhere — a search result, a digest note — asked to open an entry here */
+  focus?: RecordFocus;
   onOpenSession: (sessionId: string) => void;
   onOpenProject: (id: string) => void;
 }
 
-export function Project({ id, onOpenSession, onOpenProject }: Props) {
+export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
   const [p, setP] = useState<ProjectDetail | null | undefined>();
   const [tab, setTab] = useState<Tab>('Overview');
 
@@ -26,6 +35,10 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
       .then(setP)
       .catch(() => setP(null));
   }, [id]);
+  // declared after the reset above, so a focus that arrives with a new project wins over it
+  useEffect(() => {
+    if (focus) setTab('Learn');
+  }, [focus?.n, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (p === undefined) return <div className="empty rd-empty" aria-busy="true">Gathering every session for this repository…</div>;
   if (p === null) return <div className="empty rd-empty">This project is no longer in the index. Reopen it from the sidebar.</div>;
@@ -58,7 +71,7 @@ export function Project({ id, onOpenSession, onOpenProject }: Props) {
       </header>
 
       <div className="stage">
-        {tab === 'Learn' && <Learn base={`/api/projects/${encodeURIComponent(p.id)}/record`} cwd={p.root} />}
+        {tab === 'Learn' && <Learn base={`/api/projects/${encodeURIComponent(p.id)}/record`} cwd={p.root} focus={focus} />}
         {tab === 'Documents' && <Documents id={p.id} />}
         {tab === 'Overview' && (
         <div className="scroll rd-regions">

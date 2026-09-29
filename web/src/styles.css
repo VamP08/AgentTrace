@@ -520,6 +520,10 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .hit-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 /* a journal entry's title is its whole summary sentence; two lines of it is a result, more is a page */
 .hit-h h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* titles and Why rows open the entry they name, so they read as links on hover and focus */
+.hit-open, .dg-open { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hit-open:hover, .dg-open:hover { text-decoration: underline; }
+.hit-open:focus-visible, .dg-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hit-h .c { color: var(--ink-3); font-size: 11px; }
 .hit-s { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .hit-f { margin-top: 6px; font-size: 11px; color: var(--ink-3); }

@@ -42,6 +42,8 @@ export interface Doc {
 export interface Index {
   docs: Doc[];
   projects: string[];
+  /** project name to record folder, which is how the page finds the project a hit belongs to */
+  roots: Record<string, string>;
 }
 
 const W = { title: 10, id: 8, anchor: 6, tags: 5, why: 4, summary: 4, files: 4, body: 1 };
@@ -315,6 +317,7 @@ export function buildIndex(records: ProjectRecord[]): Index {
   return {
     docs: sorted.flatMap((r) => docsFor(r, sorted)),
     projects: sorted.map((r) => r.project),
+    roots: Object.fromEntries(sorted.map((r) => [r.project, r.root])),
   };
 }
 
@@ -405,6 +408,6 @@ export function search(index: Index, q: string, limit = 30, project?: string): S
     hits: hits.slice(0, limit),
     total: hits.length,
     tookMs: Date.now() - t0,
-    indexed: { docs: pool.length, projects: index.projects },
+    indexed: { docs: pool.length, projects: index.projects, roots: index.roots },
   };
 }

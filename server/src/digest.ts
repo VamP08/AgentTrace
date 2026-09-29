@@ -21,7 +21,8 @@ function prompts(events: Event[]): string[] {
       .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!text || /^<[a-z][a-z0-9-]*>/i.test(text)) continue;
+    // "[Request interrupted by user…]" is the tool recording a stop, not something the person asked
+    if (!text || /^<[a-z][a-z0-9-]*>/i.test(text) || /^\[Request interrupted/.test(text)) continue;
     out.push(text);
   }
   return out;

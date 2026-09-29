@@ -30,11 +30,26 @@ export function Diffs({ sessionId, events }: Props) {
   const [sizes, setSizes] = useState<Record<string, { add: number; del: number }>>({});
   const measured = useRef(new Set<string>());
 
-  // Refetch the file list whenever a new snapshot event arrives.
+  // Refetch the file list whenever a new snapshot event arrives. Which session the list is for is
+  // kept beside it: until this session's list has arrived the view says it is reading, because an
+  // empty list shown meanwhile said "no file backups" of a session that had changed 65 files.
+  const [listedFor, setListedFor] = useState<string>();
   const snapshots = useMemo(() => events.filter((e) => e.kind === 'snapshot').length, [events]);
   useEffect(() => {
-    fetch(`/api/sessions/${sessionId}/files`).then((r) => r.json()).then(setFiles).catch(() => setFiles([]));
+    let dead = false;
+    fetch(`/api/sessions/${sessionId}/files`)
+      .then((r) => r.json())
+      .catch(() => [])
+      .then((list) => {
+        if (dead) return;
+        setFiles(list);
+        setListedFor(sessionId);
+      });
+    return () => {
+      dead = true;
+    };
   }, [sessionId, snapshots]);
+  const listing = listedFor !== sessionId;
 
   const stackByFile = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -110,9 +125,10 @@ export function Diffs({ sessionId, events }: Props) {
   return (
     <div className="split">
       <aside className="files">
-        <h3>Files touched · {files.length}</h3>
-        {files.length === 0 && <div className="empty">No file backups recorded for this session yet.</div>}
-        {files.map((f) => (
+        <h3>Files touched · {listing ? '…' : files.length}</h3>
+        {listing && <div className="empty small" aria-busy="true">Reading which files this session changed…</div>}
+        {!listing && files.length === 0 && <div className="empty">No file backups recorded for this session yet.</div>}
+        {!listing && files.map((f) => (
           <div key={f.path} className="file">
             <Path path={f.path} />
             <div className="badges">

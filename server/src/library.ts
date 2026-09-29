@@ -19,8 +19,18 @@ export { completeness, sections } from '@agenttrace/shared';
 function list(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : typeof v === 'string' && v ? [v] : [];
 }
-function str(v: unknown, fallback = ''): string {
-  return v === undefined || v === null ? fallback : v instanceof Date ? v.toISOString() : String(v);
+/**
+ * A frontmatter value as text. YAML reads a bare `date: 2026-09-28` as a timestamp at midnight UTC,
+ * which then printed as `2026-09-28T00:00:00.000Z` on every journal entry; a date-only value stays a
+ * date. A real timestamp keeps its time.
+ */
+export function str(v: unknown, fallback = ''): string {
+  if (v === undefined || v === null) return fallback;
+  if (v instanceof Date) {
+    const iso = v.toISOString();
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso;
+  }
+  return String(v);
 }
 
 export function readSources(v: unknown): EntrySource[] {

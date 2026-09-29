@@ -57,6 +57,8 @@ const events: Event[] = [
     'server/src/tail.ts': { backup: 'aaaaaaaaaaaaaaaa@v2', version: 2, backupTime: '2026-09-03T12:00:00.000Z', dir: `${CWD}/server/src` },
   }),
   { kind: 'user', id: 'u3', ts: '2026-09-03T12:40:00.000Z', sessionId: 'sess-1', text: '   <system-reminder>only this</system-reminder>  ', images: 0 },
+  // the tool recording that the person pressed stop: not something they asked for
+  { kind: 'user', id: 'u4', ts: '2026-09-03T12:41:00.000Z', sessionId: 'sess-1', text: '[Request interrupted by user for tool use]', images: 0 },
   { kind: 'user', id: 'u4', ts: '2026-09-03T12:50:00.000Z', sessionId: 'sess-1', text: '<task-notification>a helper finished</task-notification>', images: 0 },
 ];
 

@@ -22,6 +22,8 @@ let described = new Map<string, { size: number; mtimeMs: number; session: Sessio
 // the first thing anyone opening the app waited for. Written at most once a minute, and only after a
 // listing described something new; a cache, so a missing or broken file only costs time.
 let loadedFrom: string | undefined;
+/** Bumped whenever a session's description gains or changes a field. 2: `automated`, repaired titles. */
+const DESCRIBED_VERSION = 2;
 const savedAt = new Map<string, number>();
 const describedFile = (claudeRoot: string) => join(claudeRoot, 'agenttrace', 'sessions-described.json');
 
@@ -29,7 +31,9 @@ function loadDescribed(claudeRoot: string) {
   if (loadedFrom === claudeRoot) return;
   loadedFrom = claudeRoot;
   try {
-    described = new Map(Object.entries(JSON.parse(readFileSync(describedFile(claudeRoot), 'utf8'))));
+    const saved = JSON.parse(readFileSync(describedFile(claudeRoot), 'utf8'));
+    // a copy written before the description gained a field is not trusted; one cold listing rebuilds it
+    described = saved?.version === DESCRIBED_VERSION ? new Map(Object.entries(saved.entries)) : new Map();
   } catch {
     described = new Map();
   }
@@ -40,7 +44,7 @@ function saveDescribed(claudeRoot: string) {
   savedAt.set(claudeRoot, Date.now());
   try {
     mkdirSync(join(claudeRoot, 'agenttrace'), { recursive: true });
-    writeFileSync(describedFile(claudeRoot), JSON.stringify(Object.fromEntries(described)));
+    writeFileSync(describedFile(claudeRoot), JSON.stringify({ version: DESCRIBED_VERSION, entries: Object.fromEntries(described) }));
   } catch {
     // a cache; failing to write it costs the next start some time and nothing else
   }
@@ -131,13 +135,27 @@ function describeSession(projectSlug: string, archived: boolean, paths: { file: 
     bytes: st.size,
     live: !archived && Date.now() - st.mtimeMs < LIVE_WINDOW_MS,
     archived,
+    automated: /^sdk/.test(lastMatch(tail, /"entrypoint":"([^"]*)"/) ?? firstMatch(head, /"entrypoint":"([^"]*)"/) ?? ''),
     ...paths,
   };
 }
 
+/**
+ * The title a person would recognise. The coding tool's own `customTitle` is sometimes the first
+ * prompt with its line breaks deleted outright — "…the record. Reade:\Work\…", "thenjournal" — so
+ * when it is nothing but that, the prompt is shown with its spaces kept. A title somebody chose
+ * is never replaced.
+ */
 function title(tail: string, head: string): string {
+  const custom = lastMatch(tail, /"customTitle":"((?:[^"\\]|\\.)*)"/);
+  const first = firstUserText(head);
+  if (custom && first) {
+    const bare = (s: string) => s.replace(/\s+/g, '').replace(/…$/, '');
+    const c = bare(custom);
+    if (c.length >= 20 && (bare(first).startsWith(c) || c.startsWith(bare(first)))) return first;
+  }
   return (
-    lastMatch(tail, /"customTitle":"((?:[^"\\]|\\.)*)"/) ??
+    custom ??
     lastMatch(tail, /"aiTitle":"((?:[^"\\]|\\.)*)"/) ??
     lastMatch(head, /"aiTitle":"((?:[^"\\]|\\.)*)"/) ??
     firstUserText(head) ??
@@ -154,7 +172,8 @@ function firstUserText(head: string): string | undefined {
       const text = typeof c === 'string' ? c : Array.isArray(c) ? c.find((b: any) => b?.type === 'text')?.text : undefined;
       // system-injected caveats and command wrappers start with a tag; a person's prompt does not
       if (typeof text === 'string' && text.trim() && !text.trim().startsWith('<')) {
-        const t = text.trim();
+        // line breaks become spaces here, where it is known they separate words
+        const t = text.trim().replace(/\s+/g, ' ');
         return t.length > 120 ? `${t.slice(0, 119)}…` : t;
       }
     } catch {

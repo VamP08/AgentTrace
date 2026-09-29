@@ -232,4 +232,9 @@ describe('search', () => {
     expect(search(index, '   ').hits).toHaveLength(0);
     expect(search(index, '   ').indexed.projects).toEqual(['Other', 'Watcher']);
   });
+
+  // The page opens a hit in the project whose record folder this names; an empty query asks for it.
+  it('tells the page where each record lives, so a hit can be opened in its project', () => {
+    expect(search(index, '').indexed.roots).toEqual({ Other: '/records/Other', Watcher: '/records/Watcher' });
+  });
 });

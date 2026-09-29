@@ -12,11 +12,103 @@ interface Props {
   base: string;
   /** the repository's working copy, for the empty state */
   cwd: string;
+  /** an entry somebody asked to open from elsewhere: a search result, a digest note */
+  focus?: { kind: string; id: string; n: number };
 }
 
 const TYPES: LearningEntry['type'][] = ['library', 'tool', 'pattern', 'algorithm', 'math', 'architecture', 'design', 'security', 'testing', 'term'];
 const SECTION_ORDER = ['In this project', 'What it is', 'Why here', 'The idea in one picture', 'How it works', 'Where to look', 'Check yourself', 'Try it', 'Go deeper'];
 const DOCS = ['roadmap', 'stack', 'architecture', 'design', 'gaps'] as const;
+const DOC_TITLE: Record<(typeof DOCS)[number], string> = { roadmap: 'Roadmap', stack: 'Stack', architecture: 'Architecture', design: 'Design', gaps: 'Known gaps' };
+
+/** A date for a reader: the day, whatever form the frontmatter stored it in. */
+function day(v: unknown): string {
+  return String(v ?? '').slice(0, 10);
+}
+
+/**
+ * The structured half of a record document, as a document. It used to be printed as the parsed
+ * frontmatter in a JSON code block, line numbers and all — the roadmap's milestones and gates, and
+ * the gap register, unreadable to anyone who does not read JSON. The shapes are the contract's.
+ */
+function RecordDoc({ k, data, onLink }: { k: (typeof DOCS)[number]; data: any; onLink: (slug: string) => void }) {
+  const rows = (x: unknown): any[] => (Array.isArray(x) ? x.filter(Boolean) : []);
+  if (k === 'roadmap') {
+    return (
+      <ul className="rd-docrows">
+        {rows(data?.milestones).map((m) => (
+          <li key={m.id}>
+            <div className="rd-docrow-h">
+              <b>{m.id}</b><span>{m.title}</span>
+              <span className={`pill ${m.status === 'done' ? 'ok' : m.status === 'in-progress' ? 'live' : ''}`}>{m.status}</span>
+            </div>
+            {m.gate && <p><span className="rd-c">Done when: </span>{m.gate}</p>}
+            {m.deferred && <p className="rd-c">Deferred: {m.deferred}</p>}
+            {m.note && <p className="rd-c">Note: {m.note}</p>}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (k === 'stack') {
+    return (
+      <ul className="rd-docrows">
+        {rows(data?.stack).map((s) => (
+          <li key={s.name}>
+            <div className="rd-docrow-h">
+              <b>{s.name}</b>{s.version && <span className="rd-c">{s.version}</span>}<span className="pill">{s.category}</span>
+              {s.learning && <button className="rd-chip" onClick={() => onLink(String(s.learning))}>lesson</button>}
+            </div>
+            {s.why && <p>{s.why}</p>}
+            {s.instead_of && <p className="rd-c">Instead of: {s.instead_of}</p>}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (k === 'architecture') {
+    return (
+      <ul className="rd-docrows">
+        {rows(data?.components).map((c) => (
+          <li key={c.name}>
+            <div className="rd-docrow-h"><b>{c.name}</b><code>{c.path}</code></div>
+            {c.role && <p>{c.role}</p>}
+            {rows(c.depends_on).length > 0 && <p className="rd-c">Depends on: {rows(c.depends_on).join(', ')}</p>}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (k === 'design') {
+    const tokens = Object.entries(data?.tokens ?? {});
+    return (
+      <>
+        {rows(data?.principles).length > 0 && <ul>{rows(data?.principles).map((p, i) => <li key={i}>{String(p)}</li>)}</ul>}
+        {tokens.length > 0 && (
+          <ul className="rd-docrows">
+            {tokens.map(([name, value]) => <li key={name}><div className="rd-docrow-h"><b>{name}</b><code>{String(value)}</code></div></li>)}
+          </ul>
+        )}
+      </>
+    );
+  }
+  // gaps: open ones first, the most serious at the top; fixed ones stay listed, as the register asks
+  const severity: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const rank = (g: any) => (g.status === 'open' ? 0 : 10) + (severity[g.severity] ?? 3);
+  return (
+    <ul className="rd-docrows">
+      {rows(data?.gaps).sort((a, b) => rank(a) - rank(b)).map((g) => (
+        <li key={g.id}>
+          <div className="rd-docrow-h">
+            <b>{g.id}</b><span>{g.title}</span>
+            <span className={`pill ${g.status === 'fixed' ? 'ok' : g.severity === 'high' ? 'fail' : ''}`}>{g.status === 'fixed' ? 'fixed' : `open · ${g.severity}`}</span>
+          </div>
+          <p className="rd-c">Found {day(g.found)}{g.fixed ? ` · fixed ${day(g.fixed)}` : ''}{rows(g.files).length ? ` · ${rows(g.files).join(', ')}` : ''}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function readKey(project: string) {
   return `agenttrace-read:${project}`;
@@ -29,7 +121,7 @@ function loadRead(project: string): Set<string> {
   }
 }
 
-export function Learn({ base, cwd }: Props) {
+export function Learn({ base, cwd, focus }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
@@ -66,6 +158,43 @@ export function Learn({ base, cwd }: Props) {
       return { name: String(r.name), category: String(r.category ?? 'other'), why: r.why ? String(r.why) : undefined, entry, lesson };
     });
   }, [record]);
+  /**
+   * The library entries this project actually draws on: one a lesson here overlays, or one a stack row
+   * here names. The shared library holds every project's technologies, and listed whole it put HRMS's
+   * Apache POI — "so a program can hand a government portal a workbook" — under AgentTrace.
+   */
+  const usedHere = useMemo(() => {
+    const keys = new Set<string>();
+    for (const e of record?.library ?? []) {
+      if (record?.learning.some((l) => l.extends && (l.extends === e.key || e.key.endsWith(`/${l.extends}`)))) keys.add(e.key);
+    }
+    for (const r of stackRows) if (r.entry) keys.add(r.entry.key);
+    return keys;
+  }, [record, stackRows]);
+  const [allLibrary, setAllLibrary] = useState(false);
+
+  // Opened from elsewhere: go to the entry, whichever tab it lives on.
+  useEffect(() => {
+    if (!focus || !record) return;
+    const { kind, id } = focus;
+    setBrief(undefined);
+    if (kind === 'lesson') { setTab('learning'); setType('all'); setPick(id); }
+    else if (kind === 'decision') { setTab('decisions'); setPick(`d:${id}`); }
+    else if (kind === 'journal') { setTab('journal'); setPick(`j:${id}`); }
+    else if (kind === 'library') {
+      const e = record.library.find((x) => x.key === id || x.key.endsWith(`/${id}`));
+      setTab('library');
+      if (e && !usedHere.has(e.key)) setAllLibrary(true);
+      setPick(e ? `lib:${e.key}` : undefined);
+    } else if (kind === 'stack') {
+      const r = stackRows.find((x) => x.name.toLowerCase() === id.toLowerCase());
+      if (r?.lesson) { setTab('learning'); setType('all'); setPick(r.lesson.slug); }
+      else if (r?.entry) { setTab('library'); setPick(`lib:${r.entry.key}`); }
+      else { setTab('stack'); setPick(undefined); }
+    } else if (kind === 'gap') { setTab('docs'); setPick('doc:gaps'); }
+    else if (kind === 'milestone') { setTab('docs'); setPick('doc:roadmap'); }
+  }, [focus?.n, record]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const entries = useMemo(() => ordered.filter((l) => type === 'all' || l.type === type), [ordered, type]);
   const entry = record?.learning.find((l) => l.slug === pick);
   const counts = useMemo(() => {
@@ -112,7 +241,7 @@ export function Learn({ base, cwd }: Props) {
   const docCount = DOCS.filter((k) => record[k]).length;
   const tabs = {
     learning: `Lessons ${record.learning.length}`,
-    library: `Library ${record.library.length}`,
+    library: `Library ${usedHere.size}`,
     stack: `Stack ${stackRows.length}`,
     decisions: `Decisions ${record.decisions.length}`,
     journal: `Journal ${record.journal.length}`,
@@ -170,15 +299,27 @@ export function Learn({ base, cwd }: Props) {
               shared entries appear here, one per concept, reused by every project that uses it.
             </div>
           ) : (
-            record.library.map((e) => {
-              const c = completeness(e);
-              return (
-                <button key={e.key} className={`node rd-entry ${pick === `lib:${e.key}` ? 'sel' : ''}`} onClick={() => setPick(`lib:${e.key}`)}>
-                  <span className="rd-t">{e.title}</span>
-                  <span className="rd-m">{e.type} · {c.written} of {c.fillable} slots{c.complete ? ' · complete' : ''}</span>
-                </button>
-              );
-            })
+            <>
+              {usedHere.size === 0 && !allLibrary && (
+                <div className="rd-alert">Nothing in the shared library is used by this project yet.</div>
+              )}
+              {record.library.filter((e) => allLibrary || usedHere.has(e.key)).map((e) => {
+                const c = completeness(e);
+                return (
+                  <button key={e.key} className={`node rd-entry ${pick === `lib:${e.key}` ? 'sel' : ''}`} onClick={() => setPick(`lib:${e.key}`)}>
+                    <span className="rd-t">{e.title}</span>
+                    <span className="rd-m">{e.type}{usedHere.has(e.key) ? ' · used here' : ' · another project'} · {c.written} of {c.fillable} slots</span>
+                  </button>
+                );
+              })}
+              {record.library.length > usedHere.size && (
+                <div className="rd-row">
+                  <button className="btn sm quiet" onClick={() => setAllLibrary(!allLibrary)} aria-pressed={allLibrary}>
+                    {allLibrary ? 'Only what this project uses' : `Show the whole shared library (${record.library.length})`}
+                  </button>
+                </div>
+              )}
+            </>
           )
         )}
         {tab === 'stack' && (
@@ -229,8 +370,8 @@ export function Learn({ base, cwd }: Props) {
         {tab === 'docs' &&
           DOCS.map((k) => (
             <button key={k} className={`node rd-entry ${pick === `doc:${k}` ? 'sel' : ''}`} onClick={() => setPick(`doc:${k}`)} disabled={!record[k]}>
-              <span className="rd-t">{k}.md</span>
-              <span className="rd-m">{record[k] ? (record[k]!.updated ? String(record[k]!.updated).slice(0, 10) : 'present') : 'not written yet'}</span>
+              <span className="rd-t">{DOC_TITLE[k]}</span>
+              <span className="rd-m">{record[k] ? `${k}.md${record[k]!.updated ? ` · ${day(record[k]!.updated)}` : ''}` : 'not written yet'}</span>
             </button>
           ))}
         {record.unparsed.length > 0 && (
@@ -298,6 +439,9 @@ export function Learn({ base, cwd }: Props) {
                 <span className="pill">{e.level}</span>
                 <span className="rd-c">shared · {e.key}</span>
               </div>
+              {!usedHere.has(e.key) && (
+                <p className="rd-c">Not used in {record.project}. This entry was written for another project and is shown from the shared library.</p>
+              )}
               <p className="rd-lead">{e.summary}</p>
               <Slots c={c} />
               {e.verified ? (
@@ -353,8 +497,9 @@ export function Learn({ base, cwd }: Props) {
           const d = record[k];
           return d ? (
             <article className="rd-read">
-              <h2>{k}.md</h2>
-              <Code code={JSON.stringify(d.data, null, 2)} language="json" />
+              <h2>{DOC_TITLE[k]}</h2>
+              <div className="rd-meta rd-meta-under"><span className="rd-c">{k}.md{d.updated ? ` · updated ${day(d.updated)}` : ''}</span></div>
+              <RecordDoc k={k} data={d.data} onLink={openSlug} />
               <Markdown text={d.body} onLink={openSlug} />
             </article>
           ) : null;

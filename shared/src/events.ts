@@ -123,6 +123,12 @@ export interface Session {
   live: boolean;
   /** true when the coding tool's copy is gone and this is AgentTrace's own copy */
   archived: boolean;
+  /**
+   * true when a program started the session through the Agent SDK rather than a person through the
+   * CLI or an editor — the transcript's `entrypoint` begins with `sdk`. On one machine 2,720 of 2,800
+   * sessions were a memory plugin's headless workers; they are kept, but set apart from the person's own.
+   */
+  automated?: boolean;
   /** absolute path of the transcript */
   file: string;
   /** absolute path of the session folder: subagents, spilled tool results */

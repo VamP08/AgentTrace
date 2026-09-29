@@ -95,6 +95,17 @@ p.rd-lead {
   margin-bottom: 12px;
 }
 .rd-meta-under { margin: 0 0 16px; }
+
+/* The structured half of a record document — milestones, stack rows, components, gaps — one row each. */
+.rd-docrows { list-style: none; margin: 0 0 24px; padding: 0; }
+.rd-docrows li { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.rd-docrows li:last-child { border-bottom: 0; }
+.rd-docrows p { margin: 4px 0 0; }
+.rd-docrow-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.rd-docrow-h b { font-weight: 600; }
+/* a long title shares the line with its id and shrinks; only the status pill may wrap */
+.rd-docrow-h > span:not(.pill):not(.rd-c) { flex: 1 1 24ch; min-width: 0; }
+.rd-docrow-h .pill { margin-left: auto; }
 .rd-c {
   color: var(--ink-3);
   font-size: 12px;

@@ -74,6 +74,36 @@ describe('discoverSessions cache', () => {
     expect(s.live).toBe(true);
   });
 
+  // 2,720 of 2,800 sessions on one machine were a plugin's headless workers, launched through the
+  // Agent SDK. The transcript says so in `entrypoint`; a person's session says cli or an editor.
+  it('marks a session a program started through the SDK, and not one a person started', () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-disc-auto-'));
+    const dir = join(root, 'projects', 'slug');
+    mkdirSync(dir, { recursive: true });
+    const rec = (entrypoint: string) => JSON.stringify({ type: 'user', entrypoint, timestamp: '2026-09-01T00:00:00.000Z', message: { role: 'user', content: 'hello there' } }) + '\n';
+    writeFileSync(join(dir, '11111111-0000-0000-0000-000000000001.jsonl'), rec('sdk-ts'));
+    writeFileSync(join(dir, '11111111-0000-0000-0000-000000000002.jsonl'), rec('claude-vscode'));
+    writeFileSync(join(dir, '11111111-0000-0000-0000-000000000003.jsonl'), rec('cli'));
+    const byId = Object.fromEntries(discoverSessions(root).map((s) => [s.id.slice(-1), s.automated]));
+    expect(byId).toEqual({ '1': true, '2': false, '3': false });
+  });
+
+  // The tool's own customTitle is sometimes the first prompt with its line breaks deleted outright.
+  it('shows the prompt with its spaces when the tool title is only that prompt glued together', () => {
+    const root = mkdtempSync(join(tmpdir(), 'at-disc-title-'));
+    const dir = join(root, 'projects', 'slug');
+    mkdirSync(dir, { recursive: true });
+    const prompt = 'Continue the work on search over the record. Read\n    e:\\Work\\handoff.md first, then\njournal.md and roadmap.md';
+    const glued = prompt.replace(/\n\s*/g, '');
+    const user = JSON.stringify({ type: 'user', timestamp: '2026-09-01T00:00:00.000Z', message: { role: 'user', content: prompt } });
+    writeFileSync(join(dir, '22222222-0000-0000-0000-000000000001.jsonl'), user + '\n' + JSON.stringify({ type: 'custom-title', customTitle: glued }) + '\n');
+    // a title somebody chose stays as they wrote it
+    writeFileSync(join(dir, '22222222-0000-0000-0000-000000000002.jsonl'), user + '\n' + JSON.stringify({ type: 'custom-title', customTitle: 'Search work, part two' }) + '\n');
+    const byId = Object.fromEntries(discoverSessions(root).map((s) => [s.id.slice(-1), s.title]));
+    expect(byId['1']).toBe('Continue the work on search over the record. Read e:\\Work\\handoff.md first, then journal.md and roadmap.md');
+    expect(byId['2']).toBe('Search work, part two');
+  });
+
   // A cold listing read every file in one synchronous hold, 8.7 to 17.8 s after each restart. The
   // cache is kept on disk so a restart — here, reading another root and coming back — starts warm.
   it('survives a restart through the copy on disk', () => {

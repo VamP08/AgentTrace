@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
 import type { CodeWindow, Decision, JournalEntry, LearningEntry, LibraryEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
-import { readCannotFill, readLibrary, readSources, readVerified } from './library.js';
+import { readCannotFill, readLibrary, readSources, readVerified, str } from './library.js';
 
 /** Walk up from cwd looking for agenttrace.json; the record path inside may be relative to it. */
 export function findManifest(cwd: string): { manifest: ProjectManifest; root: string; repoDir: string; library?: string } | undefined {
@@ -33,9 +33,6 @@ export function findManifest(cwd: string): { manifest: ProjectManifest; root: st
 
 function list(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : typeof v === 'string' && v ? [v] : [];
-}
-function str(v: unknown, fallback = ''): string {
-  return v === undefined || v === null ? fallback : v instanceof Date ? v.toISOString() : String(v);
 }
 
 // gray-matter caches the file object under the raw text before it parses the frontmatter, and only

@@ -8,6 +8,8 @@ import type { Hit, Link, SearchResult } from '@agenttrace/shared';
 
 interface Props {
   onOpenSession: (id: string) => void;
+  /** open an entry of a record where it lives; false when no project owns it */
+  onOpenRecord: (project: string, kind: string, id: string) => boolean;
   onClose: () => void;
 }
 
@@ -21,10 +23,16 @@ const KIND_SAYS: Record<Hit['kind'], string> = {
   milestone: 'a milestone and its gate',
 };
 
-export function Search({ onOpenSession, onClose }: Props) {
+/** A file or a commit is not a page in this app, so following one searches for it instead. */
+const searched = (l: Link) => l.kind === 'file' || l.kind === 'commit';
+
+export function Search({ onOpenSession, onOpenRecord, onClose }: Props) {
   const [q, setQ] = useState('');
   const [result, setResult] = useState<SearchResult>();
   const [failed, setFailed] = useState(false);
+  // A search in flight says so. The first one after a record changes rebuilds the index, and an
+  // empty page while that happens read as "nothing found".
+  const [pending, setPending] = useState(false);
   const box = useRef<HTMLInputElement>(null);
 
   useEffect(() => box.current?.focus(), []);
@@ -32,14 +40,17 @@ export function Search({ onOpenSession, onClose }: Props) {
   useEffect(() => {
     if (!q.trim()) {
       setResult(undefined);
+      setPending(false);
       return;
     }
     let dead = false;
+    setPending(true);
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}&limit=40`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
         .then((x) => !dead && (setResult(x), setFailed(false)))
-        .catch(() => !dead && setFailed(true));
+        .catch(() => !dead && setFailed(true))
+        .finally(() => !dead && setPending(false));
     }, 180);
     return () => {
       dead = true;
@@ -47,15 +58,16 @@ export function Search({ onOpenSession, onClose }: Props) {
     };
   }, [q]);
 
-  // A link is followed by searching for what it names. The one exception is a session, which is a
-  // place in this app rather than a thing in the record.
-  const follow = (l: Link) => {
+  // A link opens what it names: a lesson, a decision, a journal entry, a gap or a milestone in its
+  // project, a session in the session view. Files and commits are searched for, which lists every
+  // entry that names them. Every link used to search, so a reader could find a lesson and never read it.
+  const follow = (l: Link, from: Hit) => {
     if (l.kind === 'session') {
       onOpenSession(l.id);
       onClose();
       return;
     }
-    setQ(l.id);
+    if (searched(l) || !onOpenRecord(l.project ?? from.project, l.kind, l.id)) setQ(l.id);
   };
 
   return (
@@ -78,11 +90,12 @@ export function Search({ onOpenSession, onClose }: Props) {
             onKeyDown={(e) => e.key === 'Escape' && (q ? setQ('') : onClose())}
           />
         </div>
-        {result && (
+        {pending && <p className="now-p small" aria-live="polite">Searching…</p>}
+        {!pending && result && (
           <p className="now-p small">
             {result.total === 0
               ? `Nothing in the record matches every word of that. ${result.indexed.docs} entries were searched, across ${result.indexed.projects.join(' and ') || 'no project'}.`
-              : `${result.total} match${result.total === 1 ? '' : 'es'} in ${result.indexed.docs} entries, in ${result.tookMs} ms.`}
+              : `${result.total} match${result.total === 1 ? '' : 'es'} in ${result.indexed.docs} entries, in ${result.tookMs} ms. Open a title to read it.`}
           </p>
         )}
         {failed && <p className="now-p">The server could not answer that search.</p>}
@@ -106,7 +119,7 @@ export function Search({ onOpenSession, onClose }: Props) {
         <article className="hit" key={`${h.kind}:${h.project}:${h.id}`}>
           <div className="hit-h">
             <span className="kind">{h.kind}</span>
-            <h4>{h.title}</h4>
+            <h4><button className="hit-open" onClick={() => onOpenRecord(h.project, h.kind, h.id)}>{h.title}</button></h4>
             <span className="c">{h.project || 'shared library'}{h.summary && h.kind !== 'stack' ? ` · ${h.summary}` : ''}</span>
           </div>
           <p className="hit-s">{h.snippet}</p>
@@ -116,8 +129,8 @@ export function Search({ onOpenSession, onClose }: Props) {
           {h.links.length > 0 && (
             <div className="hit-l">
               {h.links.map((l, i) => (
-                <button key={i} className="chip" onClick={() => follow(l)} title={l.label}>
-                  <span className="k">{l.kind}</span>
+                <button key={i} className="chip" onClick={() => follow(l, h)} title={searched(l) ? `Search for ${l.id}` : `Open: ${l.label}`}>
+                  <span className="k">{searched(l) ? `${l.kind} · search` : l.kind}</span>
                   {l.kind === 'session' ? 'open the session' : l.id}
                 </button>
               ))}

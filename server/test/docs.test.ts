@@ -52,6 +52,10 @@ describe('readRecord', () => {
     expect(r.learning[0].body).toContain('What it is');
     expect(r.decisions[0]).toMatchObject({ slug: 'no-db', status: 'accepted' });
     expect(r.journal[0]).toMatchObject({ milestone: 'M0', learning: ['jsonl'], commits: ['abc'] });
+    // a date-only value stays a date; it used to print as 2026-09-03T00:00:00.000Z on every entry
+    expect(r.journal[0].date).toBe('2026-09-03');
+    // a real timestamp keeps its time
+    expect(r.journal[0].started).toBe('2026-09-03T04:43:00.000Z');
     expect(r.unparsed.map((u) => u.file)).toEqual(['learning/backtick.md', 'learning/broken.md', 'learning/no-title.md']);
     expect(r.design).toBeUndefined();
   });

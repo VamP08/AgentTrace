@@ -7,7 +7,7 @@ import { Diffs } from './views/Diffs';
 import { Agents } from './views/Agents';
 import { Context } from './views/Context';
 import { Setup } from './views/Setup';
-import { Project } from './views/Project';
+import { Project, type RecordFocus } from './views/Project';
 import { Digest } from './views/Digest';
 import { Search } from './views/Search';
 import type { Project as ProjectRow, ProjectIndex } from '@agenttrace/shared';
@@ -40,6 +40,7 @@ export function App() {
   const [index, setIndex] = useState<ProjectIndex>({ projects: [], misc: [] });
   const [openProject, setOpenProject] = useState<string>();
   const [showOther, setShowOther] = useState(false);
+  const [showBots, setShowBots] = useState(false);
   const [hooks, setHooks] = useState<any>();
   const [commits, setCommits] = useState<any[]>([]);
   const [railOpen, setRailOpen] = useState(false);
@@ -100,6 +101,31 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
+  // Which project owns each record, as record name to record folder. A search hit or a digest note
+  // names its record ("HRMS"); the project list knows each project's record folder. Matching the two
+  // folders is what lets a click open the lesson in the right project instead of searching again.
+  const [recordRoots, setRecordRoots] = useState<Record<string, string>>({});
+  const [focus, setFocus] = useState<RecordFocus>();
+  useEffect(() => {
+    fetch('/api/search?q=').then((r) => (r.ok ? r.json() : null)).then((x) => x?.indexed?.roots && setRecordRoots(x.indexed.roots)).catch(() => {});
+  }, [index]);
+
+  /** Open one entry of a record — a lesson, a decision, a gap, a milestone — where it lives. False when no project owns it. */
+  const openRecord = (project: string, kind: string, id: string): boolean => {
+    const norm = (p?: string) => (p ?? '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const root = norm(recordRoots[project]);
+    // the shared library belongs to no project; any project that keeps a record can show it
+    const p = root ? index.projects.find((x) => norm(x.recordRoot) === root) : index.projects.find((x) => x.recordRoot && !x.recordMissing);
+    if (!p) return false;
+    setSearching(false);
+    setSetup(false);
+    setRailOpen(false);
+    setOpenProject(p.id);
+    setOpened((o) => ({ ...o, [p.id]: true }));
+    setFocus({ kind, id, n: Date.now() });
+    return true;
+  };
+
   const select = (id: string) => {
     setOpenProject(undefined);
     setSetup(false);
@@ -110,6 +136,7 @@ export function App() {
   };
 
   const selectProject = (id: string) => {
+    setFocus(undefined);
     setSetup(false);
     setSearching(false);
     setRailOpen(false);
@@ -133,24 +160,32 @@ export function App() {
   // real places work happened, so they are kept, but folded away under "Other places".
   // Three sections: GitHub repositories, repositories not on GitHub yet, and sessions that touched
   // no repository at all, grouped by the folder they ran in.
-  const { github, local, misc } = useMemo(() => {
+  const { github, local, misc, automated } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const match = (p: ProjectRow) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q);
     const list = index.projects.filter(match);
     const byId = new Map(s.sessions.map((x) => [x.id, x]));
+    // Sessions a program started through the SDK are kept apart from the person's own: on one
+    // machine they were 2,720 of 2,800, and mixed in they buried everything a person actually did.
     const groups = new Map<string, Session[]>();
+    const bots = new Map<string, Session[]>();
     for (const m of index.misc) {
       const x = byId.get(m.sessionId);
       if (!x) continue;
       if (q && !x.title.toLowerCase().includes(q) && !m.folder.toLowerCase().includes(q)) continue;
-      groups.set(m.folder, [...(groups.get(m.folder) ?? []), x]);
+      const into = x.automated ? bots : groups;
+      into.set(m.folder, [...(into.get(m.folder) ?? []), x]);
     }
+    const byRecent = (g: Map<string, Session[]>) =>
+      [...g.entries()].map(([folder, items]) => ({ folder, items: items.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)) })).sort((a, b) => (a.items[0].updatedAt < b.items[0].updatedAt ? 1 : -1));
     return {
       github: list.filter((p) => p.kind === 'github'),
       local: list.filter((p) => p.kind === 'local'),
-      misc: [...groups.entries()].map(([folder, items]) => ({ folder, items: items.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)) })).sort((a, b) => (a.items[0].updatedAt < b.items[0].updatedAt ? 1 : -1)),
+      misc: byRecent(groups),
+      automated: byRecent(bots),
     };
   }, [index, s.sessions, query]);
+  const people = useMemo(() => s.sessions.filter((x) => !x.automated).length, [s.sessions]);
 
   const sessionsOf = useMemo(() => {
     const byId = new Map(s.sessions.map((x) => [x.id, x]));
@@ -179,7 +214,7 @@ export function App() {
         <div className="brand">
           <span className="mark" aria-hidden />
           <h1>AgentTrace</h1>
-          <span className="sub">{s.sessions.length} sessions</span>
+          <span className="sub" title={people < s.sessions.length ? `and ${s.sessions.length - people} started by programs` : undefined}>{people} sessions</span>
           <button className="btn sm quiet close" ref={railClose} onClick={() => setRailOpen(false)}>Close</button>
         </div>
         <div className="search">
@@ -201,26 +236,17 @@ export function App() {
           {local.map((p) => (
             <ProjectGroup key={p.id} p={p} open={!!opened[p.id]} sessions={sessionsOf(p)} selectedProject={openProject} selectedSession={s.selected} onToggle={() => setOpened({ ...opened, [p.id]: !opened[p.id] })} onProject={selectProject} onSession={select} />
           ))}
-          {misc.length > 0 && (
-            <div className="group">
-              <button className="ghead" onClick={() => setShowOther(!showOther)} aria-expanded={showOther}>
-                <span className={`chev ${showOther ? '' : 'closed'}`} aria-hidden />
-                No repository
-                <span className="n">{misc.reduce((n, g) => n + g.items.length, 0)}</span>
-              </button>
-              {showOther &&
-                misc.map((g) => (
-                  <div className="group" key={g.folder}>
-                    <div className="ghead sub">{g.folder}<span className="n">{g.items.length}</span></div>
-                    {g.items.map((x) => (
-                      <button key={x.id} className={`sess ${x.id === s.selected ? 'sel' : ''}`} onClick={() => select(x.id)} aria-current={x.id === s.selected ? 'true' : undefined}>
-                        <span className="t">{x.title}</span>
-                        <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-            </div>
+          {misc.length > 0 && <MiscGroup label="No repository" groups={misc} open={showOther} onToggle={() => setShowOther(!showOther)} selected={s.selected} onSession={select} />}
+          {automated.length > 0 && (
+            <MiscGroup
+              label="Started by programs"
+              title="Sessions a program launched through the Agent SDK, not ones you ran yourself"
+              groups={automated}
+              open={showBots}
+              onToggle={() => setShowBots(!showBots)}
+              selected={s.selected}
+              onSession={select}
+            />
           )}
         </nav>
         <div className={`foot ${link === 'offline' ? 'offline' : ''}`} role={link === 'offline' ? 'status' : undefined}>
@@ -243,11 +269,11 @@ export function App() {
           <button className="btn quiet" onClick={() => setRailOpen(true)} aria-expanded={railOpen}>Sessions</button>
         </div>
         {searching ? (
-          <Search onOpenSession={select} onClose={() => setSearching(false)} />
+          <Search onOpenSession={select} onOpenRecord={openRecord} onClose={() => setSearching(false)} />
         ) : setup ? (
           <Setup onClose={() => setSetup(false)} />
         ) : openProject ? (
-          <Project id={openProject} onOpenSession={select} onOpenProject={selectProject} />
+          <Project id={openProject} focus={focus} onOpenSession={select} onOpenProject={selectProject} />
         ) : nothing ? (
           <div className="firstrun">
             <h2>No transcripts found.</h2>
@@ -289,7 +315,7 @@ export function App() {
             </header>
             <div className="stage">
               <StackStrip events={s.events} />
-              {view === 'Digest' && <Digest sessionId={current.id} live={current.live} batches={s.batches} />}
+              {view === 'Digest' && <Digest sessionId={current.id} live={current.live} batches={s.batches} onOpenRecord={openRecord} />}
               {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
               {view === 'Context' && <Context events={s.events} hooks={hooks} />}
               {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
@@ -338,6 +364,39 @@ function ago(iso: string): string {
   if (h < 24) return `${h} h ago`;
   const d = Math.round(h / 24);
   return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+/** A collapsed group of sessions that belong to no repository, grouped by the folder they ran in. */
+function MiscGroup({ label, title, groups, open, onToggle, selected, onSession }: {
+  label: string;
+  title?: string;
+  groups: { folder: string; items: Session[] }[];
+  open: boolean;
+  onToggle: () => void;
+  selected?: string;
+  onSession: (id: string) => void;
+}) {
+  return (
+    <div className="group">
+      <button className="ghead" onClick={onToggle} aria-expanded={open} title={title}>
+        <span className={`chev ${open ? '' : 'closed'}`} aria-hidden />
+        {label}
+        <span className="n">{groups.reduce((n, g) => n + g.items.length, 0)}</span>
+      </button>
+      {open &&
+        groups.map((g) => (
+          <div className="group" key={g.folder}>
+            <div className="ghead sub">{g.folder}<span className="n">{g.items.length}</span></div>
+            {g.items.map((x) => (
+              <button key={x.id} className={`sess ${x.id === selected ? 'sel' : ''}`} onClick={() => onSession(x.id)} aria-current={x.id === selected ? 'true' : undefined}>
+                <span className="t">{x.title}</span>
+                <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+    </div>
+  );
 }
 
 /** One project in the sidebar: its own row, and its sessions beneath when opened. */

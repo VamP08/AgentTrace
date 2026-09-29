@@ -11,9 +11,11 @@ interface Props {
   sessionId: string;
   live: boolean;
   batches: number;
+  /** open a record entry in its project; the Why rows name lessons, decisions and journal entries */
+  onOpenRecord?: (project: string, kind: string, id: string) => boolean;
 }
 
-export function Digest({ sessionId, live, batches }: Props) {
+export function Digest({ sessionId, live, batches, onOpenRecord }: Props) {
   const [d, setD] = useState<DigestData>();
   const [failed, setFailed] = useState(false);
   const [grouped, setGrouped] = useState(false);
@@ -109,7 +111,9 @@ export function Digest({ sessionId, live, batches }: Props) {
             {(allWrote ? d.wrote : d.wrote.slice(0, 4)).map((w) => (
               <li key={`${w.kind}:${w.project}:${w.id}`}>
                 <span className="kind">{w.kind}</span>
-                <span className="t">{w.title}</span>
+                <span className="t">
+                  {onOpenRecord ? <button className="dg-open" onClick={() => onOpenRecord(w.project, w.kind, w.id)} title={`Open this ${w.kind}`}>{w.title}</button> : w.title}
+                </span>
                 <span className="c">{w.project}{w.summary ? ` · ${w.summary}` : ''}</span>
               </li>
             ))}

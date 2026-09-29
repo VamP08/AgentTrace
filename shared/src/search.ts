@@ -39,5 +39,6 @@ export interface SearchResult {
   total: number;
   tookMs: number;
   /** what was searched, so an empty result can be told from an empty index */
-  indexed: { docs: number; projects: string[] };
+  /** `roots` maps each record's project name to its folder, so the page can open a hit in the right project */
+  indexed: { docs: number; projects: string[]; roots: Record<string, string> };
 }
