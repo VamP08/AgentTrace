@@ -11,6 +11,7 @@ import { discoverAgents, discoverSessions, findSession } from './discover.js';
 import { archiveRecord, archiveRoot, archiveSession, archiveStats, livePaths, loadSettings, measure, pruneArchive, saveSettings, sweepArchive, MIN_CAP_BYTES } from './archive.js';
 import { buildIndex, search, type Index as SearchIndex } from './search.js';
 import { buildDigest } from './digest.js';
+import { appendProgress, readProgress, readSlugs, schedule, RECALL_DAYS } from './progress.js';
 import { codeWindow, findManifest, readRecord, readRecordAt } from './docs.js';
 import { buildDossier, docDirsFor, documents, readDocument } from './dossier.js';
 import { briefEntries, briefMarkdown, completionBrief, slotBasis, stackCoverage } from './library.js';
@@ -234,6 +235,27 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(res, 200, pruned);
     }
     // ---- end archive size limit ----
+    // ---- the reader's progress: the app's one write ----
+    if (parts[1] === 'progress' && parts.length === 2) {
+      if (req.method === 'POST') {
+        // JSON only: a cross-site form or a no-cors fetch cannot send it without a preflight this
+        // server never answers, so another website cannot write to the reader's progress.
+        if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return json(res, 415, { error: 'send application/json' });
+        let body: unknown;
+        try {
+          body = JSON.parse(await readBody(req));
+        } catch {
+          return json(res, 400, { error: 'body must be JSON' });
+        }
+        const ev = appendProgress(claudeRoot, body);
+        return typeof ev === 'string' ? json(res, 400, { error: ev }) : json(res, 200, ev);
+      }
+      const project = url.searchParams.get('project') ?? '';
+      const record = recordIndex().records.find((r) => r.project === project);
+      const events = readProgress(claudeRoot);
+      return json(res, 200, { read: readSlugs(events, project), cards: record ? schedule(events, project, record.learning) : [], recallDays: RECALL_DAYS });
+    }
+    // ---- end progress ----
     // ---- search over every record on this machine ----
     if (parts[1] === 'search' && parts.length === 2) {
       const { index } = recordIndex();

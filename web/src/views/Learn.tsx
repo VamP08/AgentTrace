@@ -2,8 +2,8 @@
 // as a picture, the mechanism in steps, questions to commit to before revealing, and one
 // exercise with a hint and a solution. Progress is a per-browser "read" mark, nothing more.
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { CodeWindow, Completeness, LearningEntry, LibraryEntry, ProjectRecord } from '@agenttrace/shared';
-import { COMPUTED_SLOTS, SLOT_LABELS, completeness, sections as splitSlots } from '@agenttrace/shared';
+import type { CodeWindow, Completeness, LearningEntry, LibraryEntry, ProjectRecord, ReviewCard } from '@agenttrace/shared';
+import { COMPUTED_SLOTS, SLOT_LABELS, completeness, questionId, sections as splitSlots } from '@agenttrace/shared';
 import { Markdown, Code } from '../components/Markdown';
 import './read.css';
 
@@ -113,21 +113,52 @@ function RecordDoc({ k, data, onLink }: { k: (typeof DOCS)[number]; data: any; o
 function readKey(project: string) {
   return `agenttrace-read:${project}`;
 }
-function loadRead(project: string): Set<string> {
+/** Read marks kept in the browser before the progress file existed; moved into the file once, then dropped. */
+function legacyRead(project: string): string[] {
   try {
-    return new Set(JSON.parse(localStorage.getItem(readKey(project)) ?? '[]'));
+    return JSON.parse(localStorage.getItem(readKey(project)) ?? '[]');
   } catch {
-    return new Set();
+    return [];
   }
+}
+
+/**
+ * One event into the progress file, the app's only write. Sent as JSON on purpose: the server
+ * refuses anything else, which is what stops another website writing to it.
+ */
+export function logProgress(ev: Record<string, unknown>): Promise<Response> {
+  return fetch('/api/progress', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ev) });
+}
+
+interface Progress {
+  read: string[];
+  cards: ReviewCard[];
+  recallDays: number;
 }
 
 export function Learn({ base, cwd, focus }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
-  const [tab, setTab] = useState<'learning' | 'library' | 'stack' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [tab, setTab] = useState<'learning' | 'review' | 'library' | 'stack' | 'decisions' | 'journal' | 'docs'>('learning');
   const [brief, setBrief] = useState<string>();
   const [read, setRead] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<Progress>();
+
+  // Progress comes from the server's file, so a cleared browser loses nothing. Marks still sitting
+  // in this browser from before the file existed are moved into it once.
+  const loadProgress = (project: string) =>
+    fetch(`/api/progress?project=${encodeURIComponent(project)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (p: Progress | null) => {
+        if (!p) return;
+        const missing = legacyRead(project).filter((s) => !p.read.includes(s));
+        for (const slug of missing) await logProgress({ type: 'read', project, slug });
+        try { localStorage.removeItem(readKey(project)); } catch { /* nothing to drop */ }
+        setRead(new Set([...p.read, ...missing]));
+        setProgress(p);
+      })
+      .catch(() => {});
 
   useEffect(() => {
     setRecord(undefined);
@@ -136,7 +167,7 @@ export function Learn({ base, cwd, focus }: Props) {
       .then((r: (ProjectRecord & { present?: boolean }) | null) => {
         const rec = r && r.present === false ? null : r;
         setRecord(rec);
-        if (rec) setRead(loadRead(rec.project));
+        if (rec) loadProgress(rec.project);
       })
       .catch(() => setRecord(null));
   }, [base]);
@@ -196,6 +227,9 @@ export function Learn({ base, cwd, focus }: Props) {
   }, [focus?.n, record]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const entries = useMemo(() => ordered.filter((l) => type === 'all' || l.type === type), [ordered, type]);
+  const now = new Date().toISOString();
+  const dueNow = (progress?.cards ?? []).filter((c) => c.due <= now);
+  const waiting = (progress?.cards ?? []).filter((c) => c.due > now);
   const entry = record?.learning.find((l) => l.slug === pick);
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -208,7 +242,12 @@ export function Learn({ base, cwd, focus }: Props) {
     const next = new Set(read);
     if (on) next.add(slug); else next.delete(slug);
     setRead(next);
-    try { localStorage.setItem(readKey(record.project), JSON.stringify([...next])); } catch { /* per-browser convenience only */ }
+    void logProgress({ type: on ? 'read' : 'unread', project: record.project, slug });
+  };
+  /** A question's answer was revealed in a lesson: the reader has now seen it, which starts its seven days. */
+  const markSeen = (slug: string, qid: string) => {
+    if (!record) return;
+    void logProgress({ type: 'seen', project: record.project, slug, qid }).then(() => loadProgress(record.project));
   };
 
   /** A [[slug]] in record text, or a chip: open that lesson, or that decision, or stay put. */
@@ -241,6 +280,7 @@ export function Learn({ base, cwd, focus }: Props) {
   const docCount = DOCS.filter((k) => record[k]).length;
   const tabs = {
     learning: `Lessons ${record.learning.length}`,
+    review: `Review ${dueNow.length}`,
     library: `Library ${usedHere.size}`,
     stack: `Stack ${stackRows.length}`,
     decisions: `Decisions ${record.decisions.length}`,
@@ -252,7 +292,7 @@ export function Learn({ base, cwd, focus }: Props) {
     <div className="split rd-split">
       <aside className="files rd-rail">
         <div className="rd-tabs">
-          {(['learning', 'library', 'stack', 'decisions', 'journal', 'docs'] as const).map((t) => (
+          {(['learning', 'review', 'library', 'stack', 'decisions', 'journal', 'docs'] as const).map((t) => (
             <button key={t} className={`btn sm ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
               {tabs[t]}
             </button>
@@ -290,6 +330,28 @@ export function Learn({ base, cwd, focus }: Props) {
                 <span className="rd-m">{l.type} · {l.level} · {minutes(l)} min{read.has(l.slug) ? ' · read' : ''}</span>
               </button>
             ))}
+          </>
+        )}
+        {tab === 'review' && (
+          <>
+            <div className="rd-alert">
+              A question comes back {progress?.recallDays ?? 7} days after you last saw it in a lesson. Answering it then is what
+              counts as remembering; answering sooner is practice, and is not counted.
+            </div>
+            {dueNow.map((c) => (
+              <button key={c.qid} className={`node rd-entry ${pick === `r:${c.qid}` ? 'sel' : ''}`} onClick={() => setPick(`r:${c.qid}`)}>
+                <span className="rd-t">{c.q}</span>
+                <span className="rd-m">{c.title} · due</span>
+              </button>
+            ))}
+            {waiting.length > 0 && (
+              <p className="rd-c">
+                {waiting.length} more waiting. The next comes back on {day(waiting[0].due)}.
+              </p>
+            )}
+            {(progress?.cards.length ?? 0) === 0 && (
+              <p className="rd-c">Nothing to review yet. Reveal a question's answer in a lesson and it comes back here after {progress?.recallDays ?? 7} days.</p>
+            )}
           </>
         )}
         {tab === 'library' && (
@@ -403,8 +465,23 @@ export function Learn({ base, cwd, focus }: Props) {
           </div>
         )}
         {brief === undefined && entry && pick && !pick.includes(':') && (
-          <Lesson key={entry.slug} entry={entry} record={record} ordered={ordered} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={openSlug} onNext={goNext} />
+          <Lesson key={entry.slug} entry={entry} record={record} ordered={ordered} base={base} isRead={read.has(entry.slug)} onRead={(on) => markRead(entry.slug, on)} onPick={openSlug} onNext={goNext} onSeen={(qid) => markSeen(entry.slug, qid)} />
         )}
+        {brief === undefined && pick?.startsWith('r:') && (() => {
+          const c = progress?.cards.find((x) => `r:${x.qid}` === pick);
+          return c ? (
+            <Review
+              key={c.qid}
+              card={c}
+              project={record.project}
+              onDone={() => {
+                const next = dueNow.find((x) => x.qid !== c.qid);
+                void loadProgress(record.project);
+                setPick(next ? `r:${next.qid}` : undefined);
+              }}
+            />
+          ) : null;
+        })()}
         {brief === undefined && pick?.startsWith('d:') && (() => {
           const d = record.decisions.find((x) => `d:${x.slug}` === pick);
           return d ? (
@@ -509,6 +586,46 @@ export function Learn({ base, cwd, focus }: Props) {
   );
 }
 
+/**
+ * One question brought back after its delay. Answer it in your head, reveal, then say how it went;
+ * the grade is SM-2's quality score. The server decides whether it counted as recall, from the log,
+ * and says so, so the reader is never told a same-day answer proved anything.
+ */
+function Review({ card, project, onDone }: { card: ReviewCard; project: string; onDone: () => void }) {
+  const [shown, setShown] = useState(false);
+  const [result, setResult] = useState<{ recall: boolean } | string>();
+  const grade = (g: number) =>
+    logProgress({ type: 'answered', project, slug: card.slug, qid: card.qid, grade: g })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((ev) => setResult({ recall: ev.recall }))
+      .catch(() => setResult('The answer could not be saved.'));
+  return (
+    <article className="rd-read">
+      <div className="rd-meta rd-meta-under"><span className="rd-c">From the lesson: {card.title} · last seen {day(card.lastSeen)}</span></div>
+      <h2>{card.q}</h2>
+      <p className="rd-c">Answer it before you look.</p>
+      {!shown && <div className="rd-row"><button className="btn primary" onClick={() => setShown(true)}>Show the answer</button></div>}
+      {shown && <p className="rd-a">{card.a}</p>}
+      {shown && result === undefined && (
+        <div className="rd-row">
+          <span className="rd-c">How did it go?</span>
+          <button className="btn sm" onClick={() => grade(1)}>Forgot</button>
+          <button className="btn sm" onClick={() => grade(3)}>Hard</button>
+          <button className="btn sm" onClick={() => grade(4)}>Good</button>
+          <button className="btn sm" onClick={() => grade(5)}>Easy</button>
+        </div>
+      )}
+      {typeof result === 'string' && <p className="rd-alert">{result}</p>}
+      {typeof result === 'object' && (
+        <div className="rd-row">
+          <span className="rd-c">{result.recall ? 'Recorded as recall.' : 'Saved, but too soon since you last saw it to count as recall.'}</span>
+          <button className="btn sm primary" onClick={onDone}>Next</button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 /** Which slots an entry holds. Three states, and the third is the point: a slot that cannot be
  *  filled here is a fact, not a to-do, and must not read as one. */
 function Slots({ c }: { c: Completeness }) {
@@ -536,7 +653,7 @@ function Slots({ c }: { c: Completeness }) {
   );
 }
 
-function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext }: { entry: LearningEntry; record: ProjectRecord; ordered: LearningEntry[]; base: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void }) {
+function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext, onSeen }: { entry: LearningEntry; record: ProjectRecord; ordered: LearningEntry[]; base: string; isRead: boolean; onRead: (on: boolean) => void; onPick: (slug: string) => void; onNext: () => void; onSeen: (qid: string) => void }) {
   const [code, setCode] = useState<CodeWindow | null | undefined>();
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [hint, setHint] = useState(false);
@@ -664,7 +781,7 @@ function Lesson({ entry, record, ordered, base, isRead, onRead, onPick, onNext }
               {entry.questions.map((q, i) => (
                 <div key={i} className="rd-quiz">
                   <p className="rd-q">{q.q}</p>
-                  {!revealed[i] && <button className="btn sm quiet" onClick={() => setRevealed({ ...revealed, [i]: true })}>Reveal the answer</button>}
+                  {!revealed[i] && <button className="btn sm quiet" onClick={() => { setRevealed({ ...revealed, [i]: true }); onSeen(questionId(entry.slug, q)); }}>Reveal the answer</button>}
                   {revealed[i] && <p className="rd-a">{q.a}</p>}
                 </div>
               ))}
