@@ -7,6 +7,7 @@
 
 [![CI](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@vamp08/agenttrace.svg)](https://www.npmjs.com/package/@vamp08/agenttrace)
 
 A local web app that shows a Claude Code session as it happens, and explains it. For the person
 who hands a coding agent an hour of work and wants to know, afterwards, what it did, what it
@@ -35,6 +36,14 @@ chunking, embeddings, cosine similarity, recall@k, grounded answers, prompt inje
 |---|---|
 | ![Files: the tree, versions on the session clock, and the diff](media/files.png) | ![Learn: a lesson opened on the code where the idea lives](media/lesson.png) |
 | ![The start page: what to pick up, the last fourteen days, and each project](media/home.png) | ![A project's overview: milestones, open gaps, decisions](media/overview.png) |
+
+On a phone:
+
+<p>
+  <img src="media/mobile-story.png" alt="Story on a phone" width="240">
+  <img src="media/mobile-files.png" alt="Files on a phone" width="240">
+  <img src="media/mobile-lesson.png" alt="A lesson on a phone" width="240">
+</p>
 
 ## How it works
 
@@ -105,6 +114,13 @@ and streams it to the page over a WebSocket. Nothing is stored except an archive
 ## Run it
 
 Requires Node 20 or later, and git for the demo.
+
+```
+npx @vamp08/agenttrace          # your own Claude Code sessions, from ~/.claude
+npx @vamp08/agenttrace --demo   # or the LectureQA demo, if you want to look first
+```
+
+Or from source:
 
 ```
 git clone https://github.com/VamP08/AgentTrace.git
@@ -215,7 +231,8 @@ npx tsx server/test/bench.ts ~/.claude/projects/<project>/<session>.jsonl
 
 Built and used on Windows against real sessions. CI runs the tests, the build and the demo on
 Windows, macOS and Linux; on macOS and Linux it has not yet been used against real sessions. The
-status-line wrapper has not been confirmed from a terminal session. Not yet published to npm.
+status-line wrapper has not been confirmed from a terminal session. Published to npm as
+`@vamp08/agenttrace`.
 
 AgentTrace reads Claude Code's own files, whose format is not a published interface and can change
 between releases. A line it doesn't understand is kept as a raw record, visible with Plain view off, rather than dropped; if a release
