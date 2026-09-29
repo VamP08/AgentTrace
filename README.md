@@ -208,10 +208,9 @@ npx tsx server/test/bench.ts ~/.claude/projects/<project>/<session>.jsonl
 
 ## Status
 
-Built and verified on Windows against real sessions. Every path is derived from `CLAUDE_CONFIG_DIR`
-or the home directory and joined with `node:path`, so macOS and Linux should work, but nothing has
-been run there yet. The status-line wrapper has not been confirmed from a terminal session. Not
-yet published to npm.
+Built and used on Windows against real sessions. CI runs the tests, the build and the demo on
+Windows, macOS and Linux; on macOS and Linux it has not yet been used against real sessions. The
+status-line wrapper has not been confirmed from a terminal session. Not yet published to npm.
 
 Plain view, on by default in the bar, shows a tool's input and any JSON result as named fields and
 hides the raw transcript records; turn it off to see everything as the transcript holds it.
