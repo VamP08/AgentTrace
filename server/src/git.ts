@@ -2,7 +2,7 @@
 // git binary already exists wherever there is a repository. A repository whose folder is gone
 // answers from the archived copy of its default-branch log.
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { archivedCommits } from './archive.js';
 import { canon, repoOf } from './projects.js';
@@ -92,6 +92,14 @@ function isAncestor(cwd: string, sha: string, branch: string): boolean {
  * it touched, most-touched first. A folder that is gone still names its repository through the
  * registry, so its archived log can answer.
  */
+function realOrSame(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
 export function gitRootsFor(cwd: string, touched: string[] = []): string[] {
   const candidates = new Map<string, number>();
   candidates.set(cwd, Infinity);
@@ -113,7 +121,8 @@ export function gitRootsFor(cwd: string, touched: string[] = []): string[] {
     if (!top) continue;
     // git prints forward slashes, repoOf returns whatever the path was resolved to, and Windows
     // disagrees on case. Two spellings of one repository meant its commits were listed twice.
-    const key = canon(top);
+    // git also prints the real path, through macOS's /var -> /private/var and Windows short names.
+    const key = canon(realOrSame(top));
     roots.set(key, (roots.get(key) ?? 0) + (n === Infinity ? 1 : n));
   }
   return [...roots.entries()].sort((a, b) => b[1] - a[1]).map(([r]) => r);

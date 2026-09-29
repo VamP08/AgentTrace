@@ -177,7 +177,8 @@ export function readDocument(dirs: DocDir[], file: string): { path: string; cont
   try {
     const buf = Buffer.alloc(Math.min(size, MAX_DOC_BYTES));
     if (buf.length) readSync(fd, buf, 0, buf.length, 0);
-    return { path: full.replace(/\\/g, '/'), content: buf.toString('utf8') };
+    // the path as it was listed, not as resolved, so the page can match it on a symlinked folder
+    return { path: resolve(file).replace(/\\/g, '/'), content: buf.toString('utf8') };
   } finally {
     closeSync(fd);
   }

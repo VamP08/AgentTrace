@@ -8,11 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRootByWalk } from '../src/projects.js';
 
-const key = (p: string | null | undefined) => (p ? realpathSync(p).toLowerCase() : p);
+// .native also expands Windows short names (RUNNER~1), which git writes out in full
+const key = (p: string | null | undefined) => (p ? realpathSync.native(p).toLowerCase() : p);
 
 describe('repoRootByWalk', () => {
   it('finds the working copy from a nested folder, and maps a worktree to its main repository', () => {
-    const base = realpathSync(mkdtempSync(join(tmpdir(), 'at-walk-')));
+    const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'at-walk-')));
     const main = join(base, 'main');
     mkdirSync(join(main, 'src', 'deep'), { recursive: true });
     const g = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
