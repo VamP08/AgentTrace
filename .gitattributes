@@ -1,0 +1,4 @@
+# LF everywhere, including Windows checkouts: a CRLF after the #! line of hooks/*.mjs broke the test
+# runner on a fresh Windows clone.
+* text=auto eol=lf
+*.png binary

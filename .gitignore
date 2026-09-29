@@ -4,9 +4,5 @@ dist/
 .agenttrace/
 *.log
 
-# design-process artifacts stay local; the record lives in the private docs repo
-/PRODUCT.md
-/DESIGN.md
-.impeccable/
 *.tsbuildinfo
 dist-demo/

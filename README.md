@@ -1,6 +1,11 @@
 # AgentTrace
 
-A local web app that shows a Claude Code session as it happens, and explains it.
+[![CI](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
+
+A local web app that shows a Claude Code session as it happens, and explains it. For the person
+who hands a coding agent an hour of work and wants to know, afterwards, what it did, what it
+changed, and why.
 
 **Live preview:** <https://agenttrace-preview.onrender.com> (a static build on made-up demo data, so nothing you do there is saved)
 
@@ -25,6 +30,60 @@ chunking, embeddings, cosine similarity, recall@k, grounded answers, prompt inje
 |---|---|
 | ![Files: the tree, versions on the session clock, and the diff](media/files.png) | ![Learn: a lesson opened on the code where the idea lives](media/lesson.png) |
 | ![The start page: what to pick up, the last fourteen days, and each project](media/home.png) | ![A project's overview: milestones, open gaps, decisions](media/overview.png) |
+
+## How it works
+
+```mermaid
+flowchart LR
+  cc[Claude Code] -->|transcripts, file backups| disk[(~/.claude)]
+  cc -->|hook events| hooks[hook logger] --> disk
+  skill[agenttrace skill] -->|lessons, decisions, journal| record[(record folder)]
+  disk --> server[Node server<br/>parse, index, archive]
+  record --> server
+  git[(git repositories)] --> server
+  server -->|JSON + WebSocket| page[React page<br/>Story, Turns, Files, Helpers, Context, Learn]
+```
+
+One Node process reads the files Claude Code already writes, turns each transcript line into a typed
+event, joins file backups, git commits, hook timings and the learning record onto the same timeline,
+and streams it to the page over a WebSocket. Nothing is stored except an archive copy of each session
+(so the tool's own cleanup doesn't delete your history) and a progress file for the review deck.
+
+## Why this instead of…
+
+- **Reading the transcript files yourself.** They are one JSON object per line, thousands of lines
+  per session, with tool inputs and results inline. AgentTrace turns them into turns, diffs and a
+  story, and joins in what the transcript doesn't hold: file versions, commits, hook timings.
+- **Token and cost trackers** (ccusage and similar). They answer how much a session cost.
+  AgentTrace answers what it did and why; per-turn token use is one view of five.
+- **LLM tracing platforms** (Langfuse, LangSmith). They trace an application you instrument, and
+  usually send the traces to a service. AgentTrace needs no instrumentation and nothing leaves
+  your machine.
+- **Scrolling back in the terminal.** Shows the conversation, not the file versions, the helpers'
+  own work, the commits, or a record you can learn from later.
+
+## Decisions and trade-offs
+
+- **No model at runtime.** Every explanation is written ahead of time, by hand or by the coding
+  session through the skill. The app can't hallucinate a summary, and it can't write one either:
+  the Story view is built only from what the files say.
+- **The disk is the database.** No import step and nothing to keep in sync. The price is that
+  every view is computed from files, which is why the server caches parses by size and mtime.
+- **The transcript is the source of truth for commits.** Git history gets rewritten; a commit
+  counts when the transcript shows it being made, and git only adds detail.
+- **Plain view on by default.** Tool inputs and JSON results show as named fields; the raw JSON
+  and unparsed records are one toggle away, never deleted.
+- **The online preview is a static build.** The real server runs once at build time on the demo
+  and every response is baked into the page, so the preview never sleeps and costs nothing to host.
+
+## Measured
+
+| What | Before | After |
+|---|---|---|
+| Event-loop stall on a warm restart with ~2,800 sessions (p99) | 24–53 s | 65 ms |
+| Opening a project's learning record (1.26 MB) | 1.4–3.3 s | 0.27–0.53 s |
+| Opening a long session's story (git lookup for its commits) | 4.6–5.3 s | 0.6 s |
+| Search across 420 record entries | | 2–14 ms |
 
 ## What it reads
 
