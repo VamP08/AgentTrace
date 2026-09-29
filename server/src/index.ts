@@ -137,6 +137,21 @@ function recordIndex(): { records: ProjectRecord[]; index: SearchIndex } {
   return indexCache;
 }
 
+/**
+ * commitsFor, kept per session until its transcript changes, and for a running session reused for
+ * a minute. Asking git for every commit in a session's window took 4.6 to 5.3 seconds on a session
+ * left open for days, and Story and Turns both asked on every open.
+ */
+const commitsCache = new Map<string, { key: string; at: number; value: ReturnType<typeof commitsFor> }>();
+function commitsForCached(session: Session, events: Event[]) {
+  const key = `${session.bytes}:${session.updatedAt}`;
+  const hit = commitsCache.get(session.id);
+  if (hit && (hit.key === key || (session.live && Date.now() - hit.at < 60_000))) return hit.value;
+  const value = commitsFor(session, events);
+  commitsCache.set(session.id, { key, at: Date.now(), value });
+  return value;
+}
+
 /** Commits made while the session ran, across every repository it edited files in. */
 function commitsFor(session: Session, events: Event[]) {
   if (!session.cwd) return [];
@@ -343,12 +358,12 @@ export async function handle(req: IncomingMessage, res: ServerResponse) {
           }
           return json(res, 404, { error: 'unknown commit' });
         }
-        return json(res, 200, commitsFor(session, parsed.events));
+        return json(res, 200, commitsForCached(session, parsed.events));
       }
       // ---- the catch-up digest: what changed and why, for a session nobody watched ----
       if (parts[3] === 'digest') {
         const parsed = await parseFile(session.file, { sessionId: id });
-        const commits: DigestCommit[] = commitsFor(session, parsed.events).map((c) => ({ sha: c.sha, subject: c.subject, ts: c.ts, repo: c.repo }));
+        const commits: DigestCommit[] = commitsForCached(session, parsed.events).map((c) => ({ sha: c.sha, subject: c.subject, ts: c.ts, repo: c.repo }));
         const { records } = recordIndex();
         return json(res, 200, buildDigest(session, parsed.events, discoverAgents(session.dir), commits, records));
       }
