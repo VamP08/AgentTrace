@@ -134,7 +134,7 @@ export function Setup({ onClose }: { onClose: () => void }) {
 
             <h3>Your copy of every session <span className="pill ok">{st.archive.sessions === undefined ? 'still counting' : `${st.archive.sessions} archived`}</span></h3>
             <p>The coding tool deletes transcripts after its retention period, 30 days unless changed. AgentTrace copies each session it indexes, with its helpers and file history, into <code>{st.archive.root}</code> ({st.archive.bytes === undefined ? 'its size is counted a few seconds after the server starts' : `${(st.archive.bytes / 1e6).toFixed(0)} MB`}), and keeps reading from that copy after the original is gone. Nothing you have opened here is lost to cleanup.</p>
-            <p>You can set a size the copy is not allowed to pass. When it goes over, AgentTrace deletes whole sessions, the oldest first, and only ones whose original is still on this machine. A session whose original is already gone is never deleted, because this copy is the only one left — even if that leaves the folder over the size you set.</p>
+            <p>You can set a size the copy is not allowed to pass. When it goes over, AgentTrace deletes whole sessions, the oldest first, and only ones whose original is still on this machine. A session whose original is already gone is never deleted, because this copy is the only one left, even if that leaves the folder over the size you set.</p>
             <div className="rd-cap">
               <label htmlFor="cap-gb">Keep it under</label>
               <input id="cap-gb" type="number" min={gb(minCap)} step="0.1" value={capGb} disabled={noCap} onChange={(e) => { setCapGb(e.target.value); setCapNote(''); }} />

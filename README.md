@@ -44,32 +44,41 @@ One command, both halves: the API and live stream on `http://127.0.0.1:4747`, an
 `AGENTTRACE_WEB_PORT` move either one; anything after `--` goes to Vite. Ctrl-C stops both, and if
 either half exits the other is stopped with it.
 
-The sidebar lists every session on the machine, grouped by project, most recently changed first.
+The bar at the top says where you are: a project, then a session, each a menu with a filter. The
+start page lists what is running and the latest sessions. Sessions that wrote into no repository,
+and sessions a program started through the Agent SDK, are kept apart under the project menu.
 
 The server binds to the loopback address only, sends no cross-origin headers, and refuses
 requests whose Host is not localhost.
 
 ## Views
 
-A session opens on four views:
+A session has five views and opens on the first:
 
+- **Story.** The first prompt as the headline, the session's figures, then each prompt down a
+  spine in order with the start of the reply and the files that turn wrote. Below that, the files
+  rewritten most, the record entries written during the session, its commits and its helpers.
+  Every sentence is read from the transcript, the backups, git or the record.
 - **Turns.** While the session is live, a Now panel with the latest request, the model's latest
   line, and the running tool with its explanation; once it is over, a summary of the whole
   session instead. Below either, each turn as a chapter with counts, folded until opened.
   Commits made during a turn appear inside it.
-- **Files.** Every file the session touched, every backed-up version, and the line diff between
-  a version and the one before it, or between the last backup and the file on disk now.
+- **Files.** Every file the session touched, as a folded tree, and for the open file its saved
+  versions on the session's clock and the line diff between a version and the one before it, or
+  between the last backup and the file on disk now. A version's call and the prompt that asked
+  for it open in a side panel.
 - **Helpers.** Each subagent with the brief it received, its transcript, and its report back.
 - **Context.** Per turn: the size of the context the model saw, tokens written, replies, and
   everything that entered the context without you typing it.
 
-Clicking a project name in the sidebar opens the project instead of a session, with three tabs:
+Picking a project in the bar opens the project instead of a session, with three tabs:
 
-- **Overview.** What the repository is, the projects it shares sessions with, its own sessions,
-  and whether it keeps a record.
-- **Learn.** The project's record as a learning path: concepts by type, decisions, journal, and
-  the record's own documents — roadmap, stack, architecture, design, gaps.
-- **Documents.** The documents the repository already keeps, read in place.
+- **Overview.** Where its record stands, what the repository is, the projects it shares sessions
+  with, and its own sessions.
+- **Learn.** The project's record as a learning path: lessons by type, a review deck that brings
+  a lesson's questions back a week later, decisions, journal, and the record's own documents:
+  roadmap, stack, architecture, design, gaps.
+- **Repo files.** The documents the repository already keeps, read in place.
 
 ## The record
 

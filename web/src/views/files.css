@@ -1,0 +1,105 @@
+/* Files: a folded tree on the left; the open file as figures, versions and changes on the right;
+   why a version exists in a drawer. Sizes: 30 file name, 22 section headings, 14 rows, 13 mono. */
+
+.fx { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
+.fx-tree { overflow-y: auto; background: var(--surface); border-right: 1px solid var(--hairline); padding: 18px 0 24px; }
+.fx-tree-top { padding: 0 18px 12px; }
+.fx-tree-top h2 { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 12px; font: 600 16px var(--font-ui); }
+.fx-tree-top h2 span { font: 400 13px var(--font-mono); color: var(--ink-3); }
+.fx-filter { width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--hairline-strong); border-radius: var(--r-s); background: var(--ground); color: var(--ink); font-size: 14px; }
+.fx-filter::placeholder { color: var(--ink-3); }
+.fx-filter:focus { outline: none; border-color: var(--accent); }
+.fx-note { margin: 12px 18px; font-size: 14px; color: var(--ink-3); }
+.fx-main .fx-note { margin: 0; }
+.fx-dir { padding: 2px 0; }
+.fx-dir-h { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 18px; text-align: left; font: 13px var(--font-mono); color: var(--ink-3); }
+.fx-dir-h:hover { color: var(--ink); }
+.fx-dir-h .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-file { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 18px 7px 34px; text-align: left; font: 14px var(--font-mono); color: var(--ink-2); }
+.fx-file .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-file:hover { background: var(--hover); color: var(--ink); }
+.fx-file.on { background: var(--accent-soft); color: var(--ink); box-shadow: inset 2px 0 0 var(--accent); }
+.fx-legend { display: flex; align-items: center; gap: 10px; margin: 16px 18px 0; padding-top: 14px; border-top: 1px solid var(--hairline); font-size: 13px; color: var(--ink-3); }
+
+/* version marks: the owner's violet ramp, darkest first, one square per saved version */
+.heat { display: flex; align-items: center; gap: 3px; flex: none; }
+.heat i { width: 8px; height: 8px; background: var(--hairline-strong); }
+.heat i.h1 { background: #5119b8; } .heat i.h2 { background: #7a2bd6; } .heat i.h3 { background: #9b4de8; } .heat i.h4 { background: #c084ff; }
+.heat b { font: 500 12px var(--font-mono); color: var(--accent-text); margin-left: 3px; }
+
+.fx-main { overflow-y: auto; padding: 32px 40px 80px; min-width: 0; }
+.fx-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+.fx-path { margin: 0; font: 13px var(--font-mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.fx-head h1 { margin: 4px 0 0; font: 600 30px/1.15 var(--font-display); letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.fx-uses { margin: 6px 0 0; font-size: 14px; color: var(--ink-3); }
+.fx-uses span { color: var(--ink-2); cursor: help; }
+
+.fx-figs { display: flex; flex-wrap: wrap; gap: 12px 44px; margin: 24px 0 40px; padding: 18px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.fx-figs div { display: flex; flex-direction: column-reverse; }
+.fx-figs dd { margin: 0; font: 500 24px/1.2 var(--font-display); font-variant-numeric: tabular-nums; }
+.fx-figs dt { font: 13px var(--font-mono); color: var(--ink-3); }
+
+.fx-sec { margin-bottom: 40px; }
+.fx-sec > header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+.fx-sec h2 { font: 600 22px/1.2 var(--font-display); }
+.fx-sec .meta { font: 13px var(--font-mono); color: var(--ink-3); }
+.fx-sec .meta .add { color: var(--accent-text); font-weight: 500; }
+.fx-sec .meta .del { color: var(--ink-2); font-weight: 500; }
+
+/* the versions on the session's clock: where each sits is when it was saved */
+.fx-track { position: relative; height: 64px; margin: 0 8px; }
+.fx-track::before { content: ''; position: absolute; left: 0; right: 0; top: 15px; height: 2px; background: var(--accent-deep); }
+.fx-pt { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.fx-pt i { display: grid; place-items: center; min-width: 34px; height: 32px; padding: 0 6px; font: 500 13px var(--font-mono); font-style: normal; background: var(--ground); border: 2px solid var(--accent-deep); color: var(--ink-2); }
+.fx-pt:hover i { border-color: var(--accent); color: var(--ink); }
+.fx-pt[aria-pressed='true'] i { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.fx-pt span { font: 12px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
+.fx-pt[aria-pressed='true'] span { color: var(--ink); }
+.fx-picked { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 10px; padding: 14px 18px; background: var(--surface); border: 1px solid var(--hairline); }
+.fx-picked p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.fx-picked b { color: var(--ink); font-weight: 600; }
+.fx-picked .btn { flex: none; height: 36px; padding: 0 16px; font-size: 14px; }
+
+/* the diff: numbered lines, added on a violet band, removed struck through, long runs folded */
+.fx-diff { border: 1px solid var(--hairline); font: 13px/1.75 var(--font-mono); overflow-x: auto; }
+.fx-l { display: grid; grid-template-columns: 48px 48px 22px max-content; min-width: 100%; white-space: pre; color: var(--ink-2); }
+.fx-l .a, .fx-l .b { color: #7c7c86; text-align: right; padding-right: 10px; user-select: none; }
+.fx-l .m { user-select: none; }
+.fx-l .x { padding-right: 24px; }
+.fx-l.add { background: var(--band-add); color: var(--ink); }
+.fx-l.add .m { color: var(--accent-text); }
+.fx-l.del { color: var(--ink-3); }
+.fx-l.del .x { text-decoration: line-through; text-decoration-color: var(--hairline-strong); }
+.fx-fold { display: block; width: 100%; padding: 4px 18px; text-align: left; font: 12.5px var(--font-mono); color: var(--ink-3); background: var(--surface); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.fx-fold:hover { color: var(--accent-text); }
+.fx-fold:first-child { border-top: 0; }
+
+/* the drawer: closed until asked for */
+.fx-scrim { position: fixed; inset: 0; z-index: 30; background: var(--scrim); border: 0; cursor: pointer; }
+.fx-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 31; width: 440px; max-width: 100%; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--hairline-strong); animation: fx-in 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes fx-in { from { transform: translateX(24px); opacity: 0; } }
+.fx-drawer > header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--hairline); }
+.fx-drawer h2 { font: 600 20px var(--font-display); }
+.fx-drawer section { padding: 20px 24px; border-bottom: 1px solid var(--hairline); }
+.fx-drawer h3 { margin: 0 0 12px; font: 600 15px var(--font-ui); }
+.fx-drawer blockquote { margin: 0; padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--ground); font: 500 16px/1.5 var(--font-display); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16em; overflow-y: auto; }
+.fx-step { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 7px 0; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.fx-step span:first-child { font: 13px var(--font-mono); color: var(--ink-3); }
+.fx-step.on { color: var(--ink); }
+.fx-step.on span:first-child { color: var(--accent-text); }
+.fx-gloss { margin-top: 12px; }
+.fx-gloss summary { cursor: pointer; font-size: 14px; color: var(--accent-text); }
+.fx-gloss p { margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .fx { grid-template-columns: 1fr; overflow-y: auto; }
+  .fx-tree { border-right: 0; border-bottom: 1px solid var(--hairline); max-height: 40vh; }
+  .fx-main { padding: 20px 14px 64px; overflow: visible; }
+  .fx-head { flex-direction: column; align-items: flex-start; }
+  .fx-picked { flex-direction: column; align-items: flex-start; }
+  .fx-file, .fx-dir-h { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-drawer { animation: none; }
+}
+.fx-more { margin: 8px 0 0; }

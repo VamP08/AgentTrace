@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@agenttrace/shared';
 import { fetchSessions, openSocket } from './api';
 import { initial, reduce } from './store';
@@ -8,19 +8,21 @@ import { Agents } from './views/Agents';
 import { Context } from './views/Context';
 import { Setup } from './views/Setup';
 import { Project, type RecordFocus } from './views/Project';
-import { Digest } from './views/Digest';
+import { Story } from './views/Story';
 import { Search } from './views/Search';
 import type { Project as ProjectRow, ProjectIndex } from '@agenttrace/shared';
 import { StackStrip } from './components/StackStrip';
 
-// Only views that exist. Others arrive when they are built, not before. Digest is first and is
+// Only views that exist. Others arrive when they are built, not before. Story is first and is
 // where a session opens: somebody arriving at a session they did not watch wants what changed and
-// why before they want the turn-by-turn.
-const ALL_VIEWS = [{ id: 'Digest' }, { id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
+// why before they want the turn-by-turn. It is the M10 digest, drawn as the session's story.
+const ALL_VIEWS = [{ id: 'Story' }, { id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
 // M12 measures whether the digest helps, so the same app must be able to run without it:
-// `?study=without` hides the Digest view and sessions open on Turns, as they did before M10.
+// `?study=without` hides the Story view and sessions open on Turns, as they did before M10.
 const WITHOUT_DIGEST = new URLSearchParams(location.search).get('study') === 'without';
-const VIEWS = ALL_VIEWS.filter((v) => !(WITHOUT_DIGEST && v.id === 'Digest'));
+const VIEWS = ALL_VIEWS.filter((v) => !(WITHOUT_DIGEST && v.id === 'Story'));
+/** Where the second crumb's sessions come from: a project, or one of the two groups that have no repository. */
+type Scope = { kind: 'project'; id: string } | { kind: 'misc' } | { kind: 'bots' };
 type ViewId = (typeof ALL_VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
@@ -35,37 +37,22 @@ function readTheme(): 'dark' | 'light' {
 
 export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
-  const [view, setView] = useState<ViewId>(WITHOUT_DIGEST ? 'Turns' : 'Digest');
+  const [view, setView] = useState<ViewId>(WITHOUT_DIGEST ? 'Turns' : 'Story');
   const [query, setQuery] = useState('');
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
   const [setup, setSetup] = useState(false);
   const [searching, setSearching] = useState(false);
   const [index, setIndex] = useState<ProjectIndex>({ projects: [], misc: [] });
   const [openProject, setOpenProject] = useState<string>();
-  const [showOther, setShowOther] = useState(false);
-  const [showBots, setShowBots] = useState(false);
+  const [scope, setScope] = useState<Scope>();
   const [hooks, setHooks] = useState<any>();
   const [commits, setCommits] = useState<any[]>([]);
-  const [railOpen, setRailOpen] = useState(false);
   // Three states, not two: before the first open nothing is wrong yet, and saying "offline" then
   // is a lie the reader has no way to check.
   const [link, setLink] = useState<'connecting' | 'open' | 'offline'>('connecting');
   const socket = useRef<ReturnType<typeof openSocket>>();
-  const railClose = useRef<HTMLButtonElement>(null);
   // when the socket drops, the figures on screen are whatever arrived at this moment
   const lastSeen = useRef<Date>();
-
-  // Under 900px the rail is an overlay. Opening it moves focus inside; Escape closes it.
-  useEffect(() => {
-    if (!railOpen) return;
-    railClose.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setRailOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [railOpen]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -123,9 +110,8 @@ export function App() {
     if (!p) return false;
     setSearching(false);
     setSetup(false);
-    setRailOpen(false);
     setOpenProject(p.id);
-    setOpened((o) => ({ ...o, [p.id]: true }));
+    setScope({ kind: 'project', id: p.id });
     setFocus({ kind, id, n: Date.now() });
     return true;
   };
@@ -135,14 +121,13 @@ export function App() {
     setSearchQ(q);
     setSearching(true);
     setSetup(false);
-    setRailOpen(false);
   };
   /** Back to the start: no session, no project, no panel. */
   const goHome = () => {
     setSearching(false);
     setSetup(false);
     setOpenProject(undefined);
-    setRailOpen(false);
+    setScope(undefined);
     dispatch({ type: 'select', id: '' });
   };
 
@@ -150,7 +135,10 @@ export function App() {
     setOpenProject(undefined);
     setSetup(false);
     setSearching(false);
-    setRailOpen(false);
+    // the crumbs follow the session: the project it mainly worked in, else the group it belongs to
+    const owner = index.projects.find((p) => p.sessions.some((l) => l.sessionId === id && l.primary)) ?? index.projects.find((p) => p.sessions.some((l) => l.sessionId === id));
+    const x = s.sessions.find((y) => y.id === id);
+    setScope(owner ? { kind: 'project', id: owner.id } : x?.automated ? { kind: 'bots' } : { kind: 'misc' });
     dispatch({ type: 'select', id });
     socket.current?.subscribe(id);
   };
@@ -159,9 +147,14 @@ export function App() {
     setFocus(undefined);
     setSetup(false);
     setSearching(false);
-    setRailOpen(false);
     setOpenProject(id);
-    setOpened((o) => ({ ...o, [id]: true }));
+    setScope({ kind: 'project', id });
+    dispatch({ type: 'select', id: '' });
+  };
+  /** A group with no repository has no page of its own; the start page lists its sessions. */
+  const selectGroup = (kind: 'misc' | 'bots') => {
+    goHome();
+    setScope({ kind });
   };
 
   const current = s.sessions.find((x) => x.id === s.selected);
@@ -176,10 +169,10 @@ export function App() {
     fetch(`/api/sessions/${id}/commits`).then((r) => (r.ok ? r.json() : [])).then(setCommits).catch(() => setCommits([]));
   }, [s.selected, tick]);
 
-  // The sidebar lists projects, one per repository. Scratchpads and the tool's own folders are
-  // real places work happened, so they are kept, but folded away under "Other places".
-  // Three sections: GitHub repositories, repositories not on GitHub yet, and sessions that touched
-  // no repository at all, grouped by the folder they ran in.
+  // The first crumb lists projects, one per repository. Scratchpads and the tool's own folders are
+  // real places work happened, so they are kept, under "No repository".
+  // Four sections: GitHub repositories, repositories not on GitHub yet, sessions that touched no
+  // repository at all, and sessions a program started; the last two grouped by the folder they ran in.
   const { github, local, misc, automated } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const match = (p: ProjectRow) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q);
@@ -192,7 +185,6 @@ export function App() {
     for (const m of index.misc) {
       const x = byId.get(m.sessionId);
       if (!x) continue;
-      if (q && !x.title.toLowerCase().includes(q) && !m.folder.toLowerCase().includes(q)) continue;
       const into = x.automated ? bots : groups;
       into.set(m.folder, [...(into.get(m.folder) ?? []), x]);
     }
@@ -205,7 +197,6 @@ export function App() {
       automated: byRecent(bots),
     };
   }, [index, s.sessions, query]);
-  const people = useMemo(() => s.sessions.filter((x) => !x.automated).length, [s.sessions]);
 
   const sessionsOf = useMemo(() => {
     const byId = new Map(s.sessions.map((x) => [x.id, x]));
@@ -213,83 +204,118 @@ export function App() {
   }, [s.sessions]);
 
   const totals = useMemo(() => {
-    let output = 0, cacheRead = 0, calls = 0, failed = 0;
-    const results = new Set<string>();
+    let calls = 0, failed = 0, turns = 0;
     for (const e of s.events) {
-      if (e.kind === 'usage') { output += e.output; cacheRead += e.cacheRead; }
+      if (e.kind === 'user') turns++;
       if (e.kind === 'tool_call') calls++;
-      if (e.kind === 'tool_result') { results.add(e.toolUseId); if (e.isError) failed++; }
+      if (e.kind === 'tool_result' && e.isError) failed++;
     }
-    return { output, cacheRead, calls, failed };
+    return { calls, failed, turns };
   }, [s.events]);
 
-  // Nothing has been found at all: the main pane owns that news, not a line in the rail.
+  // What the second crumb offers: the sessions of whatever the first crumb names.
+  const scopeProject = scope?.kind === 'project' ? index.projects.find((p) => p.id === scope.id) : undefined;
+  const scopeName = scopeProject ? scopeProject.name : scope?.kind === 'misc' ? 'No repository' : scope?.kind === 'bots' ? 'Started by programs' : 'All projects';
+  const scopeSessions: MenuSession[] = useMemo(() => {
+    if (scopeProject) return sessionsOf(scopeProject).map(({ link, session }) => ({ session, note: link.byCwdOnly ? 'no files here' : `${link.edits} file${link.edits === 1 ? '' : 's'}${link.primary ? '' : ', mainly elsewhere'}` }));
+    const g = scope?.kind === 'misc' ? misc : scope?.kind === 'bots' ? automated : [];
+    return g.flatMap((x) => x.items.map((session) => ({ session, note: x.folder })));
+  }, [scopeProject, scope, misc, automated, sessionsOf]);
+
+  // Nothing has been found at all: the main pane owns that news.
   const nothing = index.projects.length === 0 && index.misc.length === 0 && s.sessions.length === 0;
 
   return (
     <div className="app">
-      <a className="skip" href="#main">Skip to the session</a>
-      {railOpen && <button className="scrim" aria-label="Close the session list" onClick={() => setRailOpen(false)} />}
-      <aside className={`side ${railOpen ? 'open' : ''}`} aria-label="Sessions">
-        <div className="brand">
-          <span className="mark" aria-hidden />
-          <h1><button className="home-link" onClick={goHome} title="Back to the start">AgentTrace</button></h1>
-          <span className="sub" title={people < s.sessions.length ? `and ${s.sessions.length - people} started by programs` : undefined}>{people} sessions</span>
-          <button className="btn sm quiet close" ref={railClose} onClick={() => setRailOpen(false)}>Close</button>
+      <a className="skip" href="#main">Skip to the content</a>
+      <header className="topbar">
+        <div className="bar-1">
+          <button className="brand" onClick={goHome} title="Back to the start"><i aria-hidden />AgentTrace</button>
+          <nav className="crumbs" aria-label="Where you are">
+            <Menu label={scopeName} title="Choose a project">
+              {(close) => (
+                <>
+                  <input
+                    className="dd-filter"
+                    type="search"
+                    autoFocus
+                    placeholder="Filter projects"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Filter projects"
+                  />
+                  <div className="dd-scroll">
+                    {index.projects.length === 0 && s.sessions.length > 0 && <p className="dd-note">Building the project index…</p>}
+                    {github.length > 0 && <h3 className="dd-h">GitHub repositories <span>{github.length}</span></h3>}
+                    {github.map((p) => <ProjectItem key={p.id} p={p} on={openProject === p.id || scopeProject?.id === p.id} onPick={() => { selectProject(p.id); close(); }} />)}
+                    {local.length > 0 && <h3 className="dd-h">Not on GitHub yet <span>{local.length}</span></h3>}
+                    {local.map((p) => <ProjectItem key={p.id} p={p} on={openProject === p.id || scopeProject?.id === p.id} onPick={() => { selectProject(p.id); close(); }} />)}
+                    {(misc.length > 0 || automated.length > 0) && <h3 className="dd-h">Without a repository</h3>}
+                    {misc.length > 0 && (
+                      <button className={`dd-item ${scope?.kind === 'misc' ? 'on' : ''}`} onClick={() => { selectGroup('misc'); close(); }}>
+                        <span className="t">No repository</span>
+                        <span className="m">{count(misc)} sessions in {misc.length} folders</span>
+                      </button>
+                    )}
+                    {automated.length > 0 && (
+                      <button className={`dd-item ${scope?.kind === 'bots' ? 'on' : ''}`} onClick={() => { selectGroup('bots'); close(); }} title="Sessions a program launched through the Agent SDK, not ones you ran yourself">
+                        <span className="t">Started by programs</span>
+                        <span className="m">{count(automated)} sessions</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </Menu>
+            {scope && (
+              <>
+                <span className="sep" aria-hidden>/</span>
+                <Menu label={current ? current.title : 'Choose a session'} title={current?.title}>
+                  {(close) => <SessionList items={scopeSessions} selected={s.selected} onPick={(id) => { select(id); close(); }} />}
+                </Menu>
+              </>
+            )}
+          </nav>
+          <label className="bar-search">
+            {/* Search spans every project's record, so it lives in the bar, not inside one project. */}
+            <input type="search" placeholder="Search the record" aria-label="Search the record" onKeyDown={(e) => { const v = e.currentTarget.value.trim(); if (e.key === 'Enter' && v) openSearch(v); }} />
+          </label>
+          <div className="bar-end">
+            {link === 'connecting' ? (
+              <span className="conn">Connecting…</span>
+            ) : link === 'open' ? (
+              <span className="conn">Connected</span>
+            ) : (
+              <span className="conn off" role="status" title={lastSeen.current ? `Showing the last data received at ${clock(lastSeen.current)}.` : 'No data has been received yet.'}>Server offline</span>
+            )}
+            <button className="btn quiet" onClick={() => { setSetup(true); setSearching(false); }}>Setup</button>
+            <button className="btn quiet" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+          </div>
         </div>
-        <div className="search">
-          {/* One box: typing filters the projects below, Enter searches every record. Search used to be
-              a quiet link in the footer, though it is the one tool that spans every project. */}
-          <input
-            type="search"
-            placeholder="Filter, or Enter to search the record"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && query.trim() && openSearch(query.trim())}
-            aria-label="Filter projects, or press Enter to search the record"
-          />
-        </div>
-        <nav className="list">
-          {index.projects.length === 0 && index.misc.length === 0 && s.sessions.length > 0 && <div className="empty small">Building the project index…</div>}
-          {github.length > 0 && <div className="ghead static">GitHub repositories<span className="n">{github.length}</span></div>}
-          {github.map((p) => (
-            <ProjectGroup key={p.id} p={p} open={!!opened[p.id]} sessions={sessionsOf(p)} selectedProject={openProject} selectedSession={s.selected} onToggle={() => setOpened({ ...opened, [p.id]: !opened[p.id] })} onProject={selectProject} onSession={select} />
-          ))}
-          {local.length > 0 && <div className="ghead static">Not on GitHub yet<span className="n">{local.length}</span></div>}
-          {local.map((p) => (
-            <ProjectGroup key={p.id} p={p} open={!!opened[p.id]} sessions={sessionsOf(p)} selectedProject={openProject} selectedSession={s.selected} onToggle={() => setOpened({ ...opened, [p.id]: !opened[p.id] })} onProject={selectProject} onSession={select} />
-          ))}
-          {misc.length > 0 && <MiscGroup label="No repository" groups={misc} open={showOther} onToggle={() => setShowOther(!showOther)} selected={s.selected} onSession={select} />}
-          {automated.length > 0 && (
-            <MiscGroup
-              label="Started by programs"
-              title="Sessions a program launched through the Agent SDK, not ones you ran yourself"
-              groups={automated}
-              open={showBots}
-              onToggle={() => setShowBots(!showBots)}
-              selected={s.selected}
-              onSession={select}
-            />
-          )}
-        </nav>
-        <div className={`foot ${link === 'offline' ? 'offline' : ''}`} role={link === 'offline' ? 'status' : undefined}>
-          {link === 'connecting' ? (
-            <span>Connecting…</span>
-          ) : (
-            <span className="state"><i className="dot" style={{ color: link === 'open' ? 'var(--success)' : 'var(--danger)' }} />{link === 'open' ? 'Server connected' : 'Server offline'}</span>
-          )}
-          <button className="btn sm quiet" onClick={() => { setSetup(true); setSearching(false); setRailOpen(false); }}>Setup</button>
-          <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
-            {theme === 'dark' ? 'Light theme' : 'Dark theme'}
-          </button>
-          {link === 'offline' && <span className="said">{lastSeen.current ? `Showing the last data received at ${clock(lastSeen.current)}.` : 'No data has been received yet.'}</span>}
-        </div>
-      </aside>
+        {current && !searching && !setup && !openProject && (
+          <div className="bar-2">
+            <div className="tabs" role="tablist">
+              {VIEWS.map((v) => (
+                <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
+                  {v.id}
+                  {v.id === 'Turns' && !s.loading && <small>{totals.turns}</small>}
+                  {v.id === 'Helpers' && s.agents.length > 0 && <small>{s.agents.length}</small>}
+                </button>
+              ))}
+            </div>
+            <div className="bar-state">
+              <span className="when">{span(current.startedAt, current.updatedAt)}</span>
+              {current.live ? <span className="pill live"><i className="dot pulse" />Live</span> : current.archived ? <span className="pill">Archived copy</span> : null}
+              {totals.failed > 0 && <span className="pill fail">{totals.failed} failed</span>}
+            </div>
+            <div id="view-tools" className="tools" />
+          </div>
+        )}
+      </header>
 
       <main className="main" id="main" tabIndex={-1}>
-        <div className="railbar">
-          <button className="btn quiet" onClick={() => setRailOpen(true)} aria-expanded={railOpen}>Sessions</button>
-        </div>
         {searching ? (
           <Search key={searchQ} initial={searchQ} onOpenSession={select} onOpenRecord={openRecord} onClose={() => setSearching(false)} />
         ) : setup ? (
@@ -303,75 +329,51 @@ export function App() {
             <p>Set <code>CLAUDE_CONFIG_DIR</code> if your transcripts live somewhere else, then reload.</p>
           </div>
         ) : !current ? (
-          <Home sessions={s.sessions} onOpenSession={select} onSearch={openSearch} />
+          <Home sessions={s.sessions} group={scope?.kind === 'misc' ? { label: 'No repository', items: scopeSessions } : scope?.kind === 'bots' ? { label: 'Started by programs', items: scopeSessions } : undefined} onOpenSession={select} onSearch={openSearch} />
         ) : (
-          <>
-            <header className="head">
-              <div className="row1">
-                <h2 title={current.title}>{current.title}</h2>
-                <span className={`pill ${current.live ? 'live' : ''}`}>{current.live ? 'Live' : current.archived ? 'Archived copy' : 'Idle'}</span>
-                {totals.failed > 0 && <span className="pill fail">{totals.failed} failed</span>}
-              </div>
-              <div className="meta">
-                <span>Folder <b>{project(current)}</b></span>
-                <span>Started <b>{when(current.startedAt)}</b></span>
-                {/* a zero here would read as "none", not as "not counted yet" */}
-                <span>Tool calls <b>{s.loading ? '…' : totals.calls}</b></span>
-                <span>Tokens out <b>{s.loading ? '…' : fmt(totals.output)}</b></span>
-                <span>Cache read <b>{s.loading ? '…' : fmt(totals.cacheRead)}</b></span>
-                <span>Transcript <b>{mb(current.bytes)}</b></span>
-              </div>
-              <div className="row2">
-                <div className="seg" role="tablist">
-                  {VIEWS.map((v) => (
-                    <button key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
-                      {v.id}
-                    </button>
-                  ))}
-                </div>
-                <div id="view-tools" className="tools" />
-              </div>
-            </header>
-            <div className="stage">
-              <StackStrip events={s.events} />
-              {view === 'Digest' && <Digest sessionId={current.id} live={current.live} batches={s.batches} onOpenRecord={openRecord} />}
-              {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
-              {view === 'Context' && <Context events={s.events} hooks={hooks} />}
-              {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
-              {view === 'Helpers' && (
-                <Agents
-                  sessionId={current.id}
-                  events={s.events}
-                  agents={s.agents}
-                  agentEvents={s.agentEvents}
-                  live={current.live}
-                  onLoadAgent={(agentId, events) => dispatch({ type: 'agentHistory', agentId, events })}
-                />
-              )}
-            </div>
-          </>
+          <div className="stage">
+            <StackStrip events={s.events} />
+            {view === 'Story' && <Story sessionId={current.id} session={current} events={s.events} live={current.live} batches={s.batches} agents={s.agents.length} onOpenRecord={openRecord} onView={(v) => setView(v)} />}
+            {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
+            {view === 'Context' && <Context events={s.events} hooks={hooks} />}
+            {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
+            {view === 'Helpers' && (
+              <Agents
+                sessionId={current.id}
+                events={s.events}
+                agents={s.agents}
+                agentEvents={s.agentEvents}
+                live={current.live}
+                onLoadAgent={(agentId, events) => dispatch({ type: 'agentHistory', agentId, events })}
+              />
+            )}
+          </div>
         )}
       </main>
     </div>
   );
 }
 
+function count(groups: { items: unknown[] }[]): number {
+  return groups.reduce((n, g) => n + g.items.length, 0);
+}
+function span(from: string, to: string): string {
+  const a = new Date(from), b = new Date(to);
+  if (Number.isNaN(a.getTime())) return '';
+  const day = a.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  const t = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return Number.isNaN(b.getTime()) || a.toDateString() !== b.toDateString() ? `${day}, ${t(a)}` : `${day}, ${t(a)} to ${t(b)}`;
+}
+
 function project(x: Session): string {
   const tail = x.cwd.split(/[\\/]/).filter(Boolean).pop();
   return tail || x.projectSlug;
-}
-function fmt(n: number): string {
-  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
 }
 function mb(b: number): string {
   return b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`;
 }
 function clock(d: Date): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-function when(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 function ago(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -386,12 +388,11 @@ function ago(iso: string): string {
 }
 
 /**
- * The start page: what is live, what happened since the last visit, and a search box. It used to be
- * "Choose a project." and a paragraph, which answered none of a returning reader's first questions.
- * Sessions a program started are left out, as they are from the counts.
+ * The start page: what is live and what happened since the last visit. With a group picked in the
+ * first crumb (no repository, or started by programs), it lists that group's sessions instead,
+ * since those groups have no page of their own. Sessions a program started are otherwise left out.
  */
-function Home({ sessions, onOpenSession, onSearch }: { sessions: Session[]; onOpenSession: (id: string) => void; onSearch: (q: string) => void }) {
-  const [q, setQ] = useState('');
+function Home({ sessions, group, onOpenSession }: { sessions: Session[]; group?: { label: string; items: MenuSession[] }; onOpenSession: (id: string) => void; onSearch: (q: string) => void }) {
   // the previous visit, read once; this visit is written for next time
   const [since] = useState(() => {
     try {
@@ -402,107 +403,107 @@ function Home({ sessions, onOpenSession, onSearch }: { sessions: Session[]; onOp
       return '';
     }
   });
+  if (group) {
+    return (
+      <div className="scroll">
+        <div className="page">
+          <h1 className="page-title">{group.label}</h1>
+          <p className="page-lede">{group.items.length} sessions that wrote into no repository, newest first.</p>
+          <SessionList items={group.items} onPick={onOpenSession} />
+        </div>
+      </div>
+    );
+  }
   const mine = sessions.filter((x) => !x.automated);
   const live = mine.filter((x) => x.live);
-  const recent = mine.filter((x) => !x.live).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 8);
+  const recent = mine.filter((x) => !x.live).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 10);
   const fresh = since ? recent.filter((x) => x.updatedAt > since).length : 0;
-  const row = (x: Session, label: string) => (
-    <li key={x.id}>
-      <span className="kind">{label}</span>
-      <span className="t"><button className="dg-open" onClick={() => onOpenSession(x.id)}>{x.title}</button></span>
-      <span className="c">{project(x)} · {ago(x.updatedAt)}</span>
-    </li>
-  );
   return (
     <div className="scroll">
-      <section className="explainer" aria-label="Search the record">
-        <h3>Search the record</h3>
-        <div className="srch">
-          <input type="search" value={q} placeholder="why is chokidar here" aria-label="Search the record" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && q.trim() && onSearch(q.trim())} />
-        </div>
-        <p className="now-p small">Lessons, decisions, gaps and milestones across every project. Press Enter.</p>
-      </section>
-      {live.length > 0 && (
-        <section className="dg">
-          <h3>Live now</h3>
-          <ul className="dg-notes">{live.map((x) => row(x, 'live'))}</ul>
+      <div className="page">
+        <h1 className="page-title">{live.length > 0 ? `${live.length} session${live.length === 1 ? '' : 's'} running now` : 'Nothing is running now'}</h1>
+        <p className="page-lede">
+          {fresh > 0 ? `${fresh} finished since your last visit. ` : ''}Pick a project in the bar above for its whole story, or search every record from the box beside it.
+        </p>
+        {live.length > 0 && (
+          <section className="sec">
+            <h2>Live</h2>
+            <SessionList items={live.map((session) => ({ session, note: project(session) }))} onPick={onOpenSession} />
+          </section>
+        )}
+        <section className="sec">
+          <h2>Latest</h2>
+          {recent.length === 0 ? <p className="page-lede">No sessions yet.</p> : <SessionList items={recent.map((session) => ({ session, note: project(session), fresh: !!since && session.updatedAt > since }))} onPick={onOpenSession} />}
         </section>
-      )}
-      <section className="dg">
-        <h3>Latest sessions{fresh > 0 ? ` · ${fresh} since your last visit` : ''}</h3>
-        {recent.length === 0 ? <p className="now-p">No sessions yet.</p> : <ul className="dg-notes">{recent.map((x) => row(x, since && x.updatedAt > since ? 'new' : 'session'))}</ul>}
-        <p className="now-p small">A project's page in the sidebar has its whole story: every session, and where its record stands.</p>
-      </section>
-    </div>
-  );
-}
-
-/** A collapsed group of sessions that belong to no repository, grouped by the folder they ran in. */
-function MiscGroup({ label, title, groups, open, onToggle, selected, onSession }: {
-  label: string;
-  title?: string;
-  groups: { folder: string; items: Session[] }[];
-  open: boolean;
-  onToggle: () => void;
-  selected?: string;
-  onSession: (id: string) => void;
-}) {
-  return (
-    <div className="group">
-      <button className="ghead" onClick={onToggle} aria-expanded={open} title={title}>
-        <span className={`chev ${open ? '' : 'closed'}`} aria-hidden />
-        {label}
-        <span className="n">{groups.reduce((n, g) => n + g.items.length, 0)}</span>
-      </button>
-      {open &&
-        groups.map((g) => (
-          <div className="group" key={g.folder}>
-            <div className="ghead sub">{g.folder}<span className="n">{g.items.length}</span></div>
-            {g.items.map((x) => (
-              <button key={x.id} className={`sess ${x.id === selected ? 'sel' : ''}`} onClick={() => onSession(x.id)} aria-current={x.id === selected ? 'true' : undefined}>
-                <span className="t">{x.title}</span>
-                <span className="m">{x.live && <span className="live"><i className="dot pulse" />Live</span>}{ago(x.updatedAt)} · {mb(x.bytes)}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-    </div>
-  );
-}
-
-/** One project in the sidebar: its own row, and its sessions beneath when opened. */
-function ProjectGroup({ p, open, sessions, selectedProject, selectedSession, onToggle, onProject, onSession }: {
-  p: ProjectRow;
-  open: boolean;
-  sessions: { link: ProjectRow['sessions'][number]; session: Session }[];
-  selectedProject?: string;
-  selectedSession?: string;
-  onToggle: () => void;
-  onProject: (id: string) => void;
-  onSession: (id: string) => void;
-}) {
-  const mainly = sessions.filter((x) => x.link.primary).length;
-  return (
-    <div className="group project">
-      <div className={`prow ${selectedProject === p.id ? 'sel' : ''}`}>
-        <button className="twist" onClick={onToggle} aria-expanded={open} aria-label={open ? `Hide sessions of ${p.name}` : `Show sessions of ${p.name}`}>
-          <span className={`chev ${open ? '' : 'closed'}`} aria-hidden />
-        </button>
-        <button className="pname" onClick={() => onProject(p.id)} title={p.root} aria-current={selectedProject === p.id ? 'true' : undefined}>
-          <span className="t">{p.live && <i className="dot pulse live-dot" />}{p.name}</span>
-          <span className="m">{sessions.length} session{sessions.length === 1 ? '' : 's'}{mainly !== sessions.length ? `, ${mainly} mainly` : ''} · {ago(p.lastTs)}</span>
-        </button>
       </div>
-      {open &&
-        sessions.map(({ link, session: x }) => (
-          <button key={x.id} className={`sess ${x.id === selectedSession ? 'sel' : ''} ${link.primary ? '' : 'also'}`} onClick={() => onSession(x.id)} aria-current={x.id === selectedSession ? 'true' : undefined} title={link.byCwdOnly ? 'Ran here, wrote nothing' : link.primary ? undefined : 'Mainly worked elsewhere'}>
-            <span className="t">{x.title}</span>
-            <span className="m">
-              {x.live && <span className="live"><i className="dot pulse" />Live</span>}
-              {ago(x.updatedAt)} · {link.byCwdOnly ? 'no files here' : `${link.edits} file${link.edits === 1 ? '' : 's'}`}{link.primary ? '' : ' · also'}
-            </span>
+    </div>
+  );
+}
+
+interface MenuSession {
+  session: Session;
+  note: string;
+  fresh?: boolean;
+}
+
+/** A dropdown that closes on a click outside it, on Escape, and after a choice. */
+function Menu({ label, title, children }: { label: string; title?: string; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', down);
+    window.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('mousedown', down);
+      window.removeEventListener('keydown', key);
+    };
+  }, [open]);
+  return (
+    <div className="dd" ref={ref}>
+      <button className="dd-btn" aria-expanded={open} aria-haspopup="true" title={title} onClick={() => setOpen(!open)}>
+        <span>{label}</span>
+      </button>
+      {open && <div className="dd-menu">{children(() => setOpen(false))}</div>}
+    </div>
+  );
+}
+
+function ProjectItem({ p, on, onPick }: { p: ProjectRow; on: boolean; onPick: () => void }) {
+  return (
+    <button className={`dd-item ${on ? 'on' : ''}`} onClick={onPick} title={p.root}>
+      <span className="t">{p.live && <i className="dot pulse live-dot" />}{p.name}</span>
+      <span className="m">{p.sessions.length} session{p.sessions.length === 1 ? '' : 's'} · {ago(p.lastTs)}</span>
+    </button>
+  );
+}
+
+/** Sessions, newest first, with a filter once there are enough to need one. Long groups show the first 200. */
+function SessionList({ items, selected, onPick }: { items: MenuSession[]; selected?: string; onPick: (id: string) => void }) {
+  const [q, setQ] = useState('');
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (t ? items.filter((x) => x.session.title.toLowerCase().includes(t) || x.note.toLowerCase().includes(t)) : items).slice(0, 200);
+  }, [items, q]);
+  return (
+    <div className="slist">
+      {items.length > 8 && <input className="dd-filter" type="search" placeholder={`Filter ${items.length} sessions`} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter sessions" />}
+      <div className="dd-scroll">
+        {shown.length === 0 && <p className="dd-note">No session matches.</p>}
+        {shown.map(({ session: x, note, fresh }) => (
+          <button key={x.id} className={`dd-item ${x.id === selected ? 'on' : ''}`} onClick={() => onPick(x.id)} aria-current={x.id === selected ? 'true' : undefined}>
+            <span className="t">{x.live && <i className="dot pulse live-dot" />}{x.title}</span>
+            <span className="m">{fresh && <b>new · </b>}{ago(x.updatedAt)} · {note} · {mb(x.bytes)}</span>
           </button>
         ))}
+        {shown.length === 200 && <p className="dd-note">Showing the newest 200. Filter to find an older one.</p>}
+      </div>
     </div>
   );
 }

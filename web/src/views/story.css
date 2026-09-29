@@ -1,0 +1,78 @@
+/* Story: the session as its first prompt, its figures and its turns down a spine.
+   Sizes: 40 the prompt, 22 section headings, 18 turn headings, 16 reading text, 13 metadata. */
+
+.story { max-width: 1120px; margin: 0 auto; padding: 48px 32px 96px; }
+.st-where { margin: 0; font: 13px var(--font-mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.st-title { margin: 12px 0 16px; font: 500 40px/1.12 var(--font-display); letter-spacing: -0.025em; max-width: 28ch; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+.st-title.clamped { display: -webkit-box; -webkit-line-clamp: 5; line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.st-lede { margin: 0; font-size: 18px; line-height: 1.6; color: var(--ink-2); max-width: 62ch; }
+.st-link { color: var(--accent-text); font-size: 14px; }
+.st-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.st-title + .st-link { display: block; margin: -6px 0 16px; }
+
+/* the figures sit in one ruled line, not in boxes */
+.st-figs { display: flex; flex-wrap: wrap; gap: 12px 48px; margin: 36px 0 56px; padding: 22px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.st-figs div { display: flex; flex-direction: column-reverse; }
+.st-figs dd { margin: 0; font: 500 26px/1.15 var(--font-display); font-variant-numeric: tabular-nums; color: var(--ink); }
+.st-figs dt { font: 13px var(--font-mono); color: var(--ink-3); }
+.st-figs .bad dd { color: var(--danger); }
+
+.st-sec { margin-bottom: 56px; }
+.st-sec > header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding-bottom: 14px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline); }
+.st-sec h2 { font: 600 22px/1.2 var(--font-display); }
+.st-sec h2 small { margin-left: 8px; font: 400 14px var(--font-mono); color: var(--ink-3); }
+.st-note { margin: 0; color: var(--ink-3); font-size: 14px; }
+
+/* ---------- the spine ---------- */
+.st-turns { list-style: none; margin: 0; padding: 0; }
+.st-turn { display: grid; grid-template-columns: 52px 20px minmax(0, 1fr) 300px; gap: 0 22px; }
+.st-time { font: 13px var(--font-mono); color: var(--ink-3); text-align: right; padding-top: 3px; }
+.st-mark { position: relative; }
+.st-mark::before { content: ''; position: absolute; left: 9px; top: 0; bottom: 0; width: 2px; background: var(--accent-deep); }
+.st-turn:last-child .st-mark::before { bottom: auto; height: 20px; }
+.st-mark::after { content: ''; position: absolute; left: 3px; top: 5px; width: 14px; height: 14px; background: var(--ground); border: 2px solid var(--accent); }
+.st-turn.now .st-mark::after { background: var(--accent); }
+.st-body { min-width: 0; padding-bottom: 40px; }
+.st-body h3 { display: flex; gap: 12px; align-items: baseline; margin: 0 0 8px; font: 500 18px/1.4 var(--font-display); color: var(--ink); }
+.st-body h3 .n { flex: none; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-body h3 .p { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.st-reply { margin: 0 0 10px; color: var(--ink-2); font-size: 16px; line-height: 1.6; max-width: 66ch; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.st-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-foot .bad { color: var(--danger); }
+.st-foot .live { color: var(--live); }
+.st-wrote { align-self: start; padding: 12px 14px; background: var(--surface); border: 1px solid var(--hairline); margin-bottom: 24px; }
+.st-wrote ul { list-style: none; margin: 0; padding: 0; }
+.st-wrote li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font: 13px var(--font-mono); color: var(--ink-2); }
+.st-wrote li + li { border-top: 1px solid var(--hairline); }
+.st-wrote .f { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-wrote .v { flex: none; color: var(--accent-text); }
+.st-wrote .more { color: var(--ink-3); }
+.st-none { margin: 0; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-commit { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); }
+.st-commit .sha { font-family: var(--font-mono); color: var(--ink); margin-right: 8px; }
+.st-fold { grid-column: 3 / 5; justify-self: start; margin: 0 0 40px; color: var(--accent-text); font-size: 14px; }
+.st-fold:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- ruled lists: files, why, commits, helpers ---------- */
+.st-rows { list-style: none; margin: 0; padding: 0; }
+.st-rows li { display: flex; align-items: baseline; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--hairline); font-size: 15px; }
+.st-rows li:last-child { border-bottom: 0; }
+.st-rows .p { flex: 1; min-width: 0; color: var(--ink); overflow-wrap: anywhere; }
+.st-rows .s { display: block; color: var(--ink-3); font-size: 14px; margin-top: 2px; }
+.st-rows .c, .st-rows .t, .st-rows .sha { flex: none; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-rows .sha { color: var(--ink-2); }
+.st-rows .k { flex: none; width: 88px; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-open { color: var(--ink); text-align: left; font: inherit; }
+.st-open:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .story { padding: 28px 16px 64px; }
+  .st-title { font-size: 28px; }
+  .st-figs { gap: 12px 28px; }
+  .st-turn { grid-template-columns: 20px minmax(0, 1fr); gap: 0 14px; }
+  .st-time { display: none; }
+  .st-mark { grid-row: span 2; }
+  .st-wrote { grid-column: 2; }
+  .st-fold { grid-column: 2; }
+  .st-rows .c { display: none; }
+}

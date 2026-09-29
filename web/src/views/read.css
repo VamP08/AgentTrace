@@ -1,21 +1,21 @@
 /* Learn, Project and Setup.
    Two of these are Read surfaces — the visitor is here to understand, not to act — so they get the
-   reading measure, the 15px body and the vertical rhythm the rest of the app is not allowed.
+   reading measure, the 16px body and the vertical rhythm the rest of the app is not allowed.
    Project is the picker in between: titled regions, ledger rows, nothing raised.
 
    Every colour, radius and face here comes from a token in styles.css; nothing declares its own.
    Class names are prefixed rd- so this file can never collide with the shared sheet.
-   Sizes are the six-step scale only: 11 / 12 / 13 / 15 / 19 / 25. */
+   Sizes come from the scale in styles.css. */
 
-/* ---------- the reading surface: 15px/1.65 at --measure ---------- */
+/* ---------- the reading surface: 16px/1.65 at --measure ---------- */
 .rd-read {
   padding: 22px 28px 64px;
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.65;
 }
 .rd-read h2 {
-  font-size: 25px;
+  font-size: 30px;
   line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -24,7 +24,7 @@
   text-wrap: pretty;
 }
 .rd-read h3 {
-  font-size: 19px;
+  font-size: 22px;
   line-height: 1.3;
   color: var(--ink);
   margin: 30px 0 8px;
@@ -32,7 +32,7 @@
   text-wrap: pretty;
 }
 .rd-read h4 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--ink);
   margin: 20px 0 6px;
@@ -80,7 +80,7 @@
 }
 .rd-read .diagram svg { max-width: 100%; height: auto; }
 p.rd-lead {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--ink-2);
   margin: 0 0 18px;
   max-width: var(--measure);
@@ -139,13 +139,13 @@ p.rd-alert { margin: 12px 0; }
 
 /* an empty or error state on a Read surface: one 19px line, then 15px prose */
 .rd-empty {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.65;
   color: var(--ink-2);
   max-width: var(--measure);
 }
 .rd-empty h3 {
-  font-size: 19px;
+  font-size: 22px;
   line-height: 1.3;
   color: var(--ink);
   margin: 0 0 8px;
@@ -166,10 +166,8 @@ p.rd-alert { margin: 12px 0; }
 .rd-rail { display: flex; flex-direction: column; }
 .rd-rail-h {
   padding: 12px 16px 6px;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--ink-3);
 }
 .rd-entry {
@@ -284,10 +282,8 @@ button.rd-chip:hover { background: var(--hover); color: var(--ink); }
   border-bottom: 1px solid var(--hairline);
 }
 .rd-chain-lab {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--ink-3);
 }
 .rd-step {
@@ -410,10 +406,8 @@ p.rd-a,
 }
 .rd-toc .rd-toc-h {
   color: var(--ink-3);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 .rd-toc button {
   color: var(--ink-3);
@@ -430,10 +424,8 @@ p.rd-a,
 .rd-region { padding: 22px 28px 26px; }
 .rd-region + .rd-region { border-top: 1px solid var(--hairline); }
 .rd-region-h {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--ink-3);
   margin: 0 0 12px;
 }
@@ -441,7 +433,7 @@ p.rd-a,
   margin: 0 0 12px;
   max-width: var(--measure);
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.65;
 }
 .rd-region p:last-child { margin-bottom: 0; }
@@ -458,7 +450,7 @@ p.rd-a,
 }
 .rd-fig b {
   color: var(--ink);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -471,7 +463,7 @@ p.rd-a,
 /* ---------- Project: the session list as a strip of days ---------- */
 .rd-day + .rd-day { margin-top: 18px; }
 .rd-day-h {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-3);
@@ -621,7 +613,7 @@ p.rd-a,
    a slot that cannot be filled here is a fact, not an unfinished job. */
 .rd-slots { display: flex; flex-wrap: wrap; gap: var(--s-xs); margin: var(--s-l) 0; }
 .rd-slot {
-  font: var(--t-label); padding: 2px 8px; border-radius: var(--r-s);
+  font: 500 12px var(--font-mono); padding: 2px 8px; border-radius: var(--r-s);
   border: 1px solid var(--hairline); color: var(--ink-3);
 }
 .rd-slot.written { color: var(--ink); border-color: var(--hairline-strong); }

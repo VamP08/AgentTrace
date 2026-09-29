@@ -79,7 +79,7 @@ export function Search({ onOpenSession, onOpenRecord, onClose, initial }: Props)
         <p>
           Every record on this machine: the lessons, the decisions, the journal, the technologies and why each was chosen,
           the known gaps, the milestones, and the shared library. It reads the Markdown files themselves, so what you
-          find here is exactly what was written down — nothing is generated and nothing is inferred.
+          find here is exactly what was written down. Nothing is generated and nothing is inferred.
         </p>
         <div className="srch">
           <input

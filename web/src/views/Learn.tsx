@@ -545,7 +545,7 @@ export function Learn({ base, cwd, focus }: Props) {
                       {here.map((l) => (
                         <li key={l.slug}>
                           <button className="rd-chip" onClick={() => { setTab('learning'); setPick(l.slug); }}>{record.project}</button>
-                          {l.files[0] ? <> — <code>{l.files[0]}</code></> : null}
+                          {l.files[0] ? <>, <code>{l.files[0]}</code></> : null}
                           {l.anchor ? <> at <code>{l.anchor}</code></> : null}
                         </li>
                       ))}
@@ -560,7 +560,7 @@ export function Learn({ base, cwd, focus }: Props) {
                     {e.sources.map((src) => (
                       <li key={src.url}>
                         <a href={src.url} target="_blank" rel="noreferrer">{src.title || src.url}</a>
-                        {src.took ? ` — ${src.took}` : ''}
+                        {src.took ? `, ${src.took}` : ''}
                       </li>
                     ))}
                   </ul>
