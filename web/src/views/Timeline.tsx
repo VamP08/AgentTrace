@@ -205,7 +205,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
             This transcript has no turn from you. {plain ? 'Turn off Plain view in the bar, then Raw records, to see what the file holds.' : 'Toggle Raw records above to see what the file holds.'}
           </div>
         )}
-        {!loading && current && <Now turn={current} live={live} turns={turns} events={events} />}
+        {!loading && current && <Now turn={current} live={live} turns={turns} events={events} helper={!sessionId} />}
         <div style={{ height: virt.getTotalSize(), position: 'relative' }}>
           {virt.getVirtualItems().map((v) => (
             <div key={v.key} data-index={v.index} ref={virt.measureElement} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${v.start}px)` }}>
@@ -219,7 +219,8 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
 }
 
 /** What is true right now, or, for a finished session, what the whole session amounted to. */
-function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: Turn[]; events: Event[] }) {
+/** `helper`: a helper's own transcript, whose prompts the main session wrote, not the person. */
+function Now({ turn, live, turns, events, helper }: { turn: Turn; live: boolean; turns: Turn[]; events: Event[]; helper?: boolean }) {
   const state = turnState(turn, live);
   if (!live) {
     const files = new Set<string>();
@@ -232,7 +233,7 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
       <section className="tl-sum" aria-label="Session summary">
         <dl className="st-figs">
           <div><dt>{one(turns.length, 'turn', 'turns')}</dt><dd>{turns.length}</dd></div>
-          <div><dt>typed by you</dt><dd>{typed}</dd></div>
+          {!helper && <div><dt>typed by you</dt><dd>{typed}</dd></div>}
           <div><dt>{one(calls, 'tool call', 'tool calls')}</dt><dd>{calls}</dd></div>
           <div><dt>{one(files.size, 'file changed', 'files changed')}</dt><dd>{files.size}</dd></div>
           {failed > 0 && <div className="bad"><dt>failed</dt><dd>{failed}</dd></div>}

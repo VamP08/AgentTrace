@@ -14,6 +14,7 @@ export async function fetchSessions(): Promise<Session[]> {
 let live: WebSocket | undefined;
 
 export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open: boolean) => void) {
+  if (import.meta.env.VITE_DEMO === '1') return previewSocket(onMessage, onState);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   let ws: WebSocket | undefined;
   let wanted: string | undefined;
@@ -62,5 +63,24 @@ export function openSocket(onMessage: (m: ServerMessage) => void, onState: (open
       if (sock.readyState === WebSocket.CONNECTING) sock.addEventListener('open', () => sock.close());
       else sock.close();
     },
+  };
+}
+
+/**
+ * The online preview has no server to hold a socket open. A subscription is answered once, from the
+ * same two responses the socket would have sent: the session's history and its helpers.
+ */
+function previewSocket(onMessage: (m: ServerMessage) => void, onState: (open: boolean) => void) {
+  setTimeout(() => onState(true), 0);
+  return {
+    subscribe(sessionId: string) {
+      Promise.all([fetch(`/api/sessions/${sessionId}/events`).then((r) => r.json()), fetch(`/api/sessions/${sessionId}/agents`).then((r) => r.json())])
+        .then(([h, agents]) => {
+          onMessage({ type: 'history', sessionId, events: h.events ?? [], parseErrors: h.parseErrors ?? 0 });
+          onMessage({ type: 'agents', sessionId, agents: agents ?? [] });
+        })
+        .catch(() => {});
+    },
+    close() {},
   };
 }

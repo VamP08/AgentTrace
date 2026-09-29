@@ -10,8 +10,16 @@ import '@fontsource/sometype-mono/500.css';
 import './styles.css';
 import { App } from './App';
 
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+// The online preview answers /api from a captured snapshot. The check is on the literal so the
+// normal build drops the whole branch, snapshot included.
+const preview = import.meta.env.VITE_DEMO === '1' ? Promise.all([import('./demo/install'), import('./demo/Banner')]) : undefined;
+
+(preview ?? Promise.resolve(undefined)).then((mods) => {
+  const Banner = mods?.[1].Banner;
+  createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      {Banner && <Banner />}
+      <App />
+    </React.StrictMode>,
+  );
+});

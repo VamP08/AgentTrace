@@ -291,7 +291,7 @@ export function App() {
             {link === 'connecting' ? (
               <span className="conn">Connecting…</span>
             ) : link === 'open' ? (
-              <span className="conn">Connected</span>
+              <span className="conn">{import.meta.env.VITE_DEMO === '1' ? 'Preview' : 'Connected'}</span>
             ) : (
               <span className="conn off" role="status" title={lastSeen.current ? `Showing the last data received at ${clock(lastSeen.current)}.` : 'No data has been received yet.'}>Server offline</span>
             )}

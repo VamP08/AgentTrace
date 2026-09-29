@@ -1,0 +1,10 @@
+/* Preview build only; the normal bundle never imports this file. */
+#root { display: flex; flex-direction: column; }
+#root > .app { flex: 1; min-height: 0; height: auto; }
+.preview-banner { flex: none; display: flex; align-items: center; gap: 16px; padding: 10px 24px; background: var(--accent-deep); color: var(--ink); font-size: 14px; }
+.preview-banner p { margin: 0; flex: 1; }
+.preview-banner a { color: var(--ink); }
+.preview-banner .btn { color: var(--ink); }
+@media (max-width: 900px) {
+  .preview-banner { padding: 10px 14px; font-size: 13px; }
+}

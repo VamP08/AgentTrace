@@ -9,3 +9,4 @@ dist/
 /DESIGN.md
 .impeccable/
 *.tsbuildinfo
+dist-demo/
