@@ -40,6 +40,18 @@ describe('sweepArchive', () => {
   });
 });
 
+describe('sweepArchive and automated sessions', () => {
+  it('does not copy a session a program started through the SDK', async () => {
+    const root = fakeRoot();
+    const bot = '99999999-0000-0000-0000-000000000009';
+    writeFileSync(join(root, 'projects', 'e--Work-demo', `${bot}.jsonl`), JSON.stringify({ type: 'user', entrypoint: 'sdk-ts', timestamp: '2026-09-03T01:00:00.000Z', message: { role: 'user', content: 'condense this' } }) + '\n');
+    const r = await sweepArchive(root, discoverSessions(root));
+    expect(r.copied).toBe(2);
+    expect(existsSync(join(root, 'agenttrace', 'archive', 'projects', 'e--Work-demo', `${bot}.jsonl`))).toBe(false);
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe('buildFacts', () => {
   it('hands concurrent callers the same pass instead of starting one each', async () => {
     const root = fakeRoot();

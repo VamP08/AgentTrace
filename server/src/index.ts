@@ -443,6 +443,8 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
     if (!archiveDue.has(b.sessionId)) {
       archiveDue.set(b.sessionId, setTimeout(() => {
         archiveDue.delete(b.sessionId);
+        // sessions a program started are not archived; see sweepArchive
+        if (findSession(claudeRoot, b.sessionId)?.automated) return;
         archiveSession(claudeRoot, { archived: false, projectSlug: b.projectSlug, id: b.sessionId, ...livePaths(claudeRoot, b.projectSlug, b.sessionId) });
       }, 30_000).unref());
     }

@@ -91,6 +91,9 @@ export async function sweepArchive(claudeRoot: string, sessions: Session[], repo
   const t0 = Date.now();
   let copied = 0;
   for (const s of sessions) {
+    // A session a program started through the SDK is not copied: the owner's call on 2026-09-29, since
+    // 2,726 of them were a plugin's workers and most of the archive's 2.4 GB. Copies made before stay.
+    if (s.automated) continue;
     if (timed(`copy ${s.id}`, () => archiveSession(claudeRoot, s))) copied++;
     await new Promise((r) => setImmediate(r));
   }
