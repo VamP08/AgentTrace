@@ -31,7 +31,7 @@ mkdirSync(repo, { recursive: true });
 mkdirSync(record, { recursive: true });
 
 // the coding tool names a project folder after its working directory
-const slug = repo.replace(/[^a-zA-Z0-9]/g, '-');
+const slugOf = (dir) => dir.replace(/[^a-zA-Z0-9]/g, '-');
 const DAY = 86_400_000;
 const ID = ['-c', 'user.name=Demo Student', '-c', 'user.email=student@example.com', '-c', 'core.autocrlf=false'];
 
@@ -65,15 +65,22 @@ function passage(a, b) {
 
 /** One session's transcript, written line by line the way the coding tool writes it. */
 class Transcript {
-  constructor(title, at, id = randomUUID()) {
+  constructor(title, at, id = randomUUID(), { cwd = repo } = {}) {
     this.id = id;
     this.title = title;
     this.t = at;
+    this.start = at;
+    this.cwd = cwd;
     this.lines = [];
     this.last = null;
     this.context = 18_000;
     this.dirty = new Set();
     this.versions = {}; // per session, as the tool numbers them
+    this.hooks = []; // what AgentTrace's hook logger would have written: timings the transcript lacks
+    this.seen = new Set(); // files read or written in this session
+  }
+  hook(event, extra = {}) {
+    this.hooks.push({ hook_event_name: event, received_at: new Date(this.t).toISOString(), session_id: this.id, ...extra });
   }
   tick(seconds) {
     this.t += seconds * 1000;
@@ -81,7 +88,7 @@ class Transcript {
   }
   base(type, seconds) {
     const uuid = randomUUID();
-    const rec = { type, uuid, parentUuid: this.last, timestamp: this.tick(seconds), sessionId: this.id, cwd: repo, gitBranch: 'main', version: '2.1.0', entrypoint: 'cli', userType: 'external' };
+    const rec = { type, uuid, parentUuid: this.last, timestamp: this.tick(seconds), sessionId: this.id, cwd: this.cwd, gitBranch: 'main', version: '2.1.0', entrypoint: 'cli', userType: 'external' };
     this.last = uuid;
     return rec;
   }
@@ -89,8 +96,9 @@ class Transcript {
     this.context += 900 + out;
     return { input_tokens: 4, cache_creation_input_tokens: 900, cache_read_input_tokens: this.context, output_tokens: out };
   }
-  user(content) {
-    this.lines.push({ ...this.base('user', 25), message: { role: 'user', content } });
+  user(content, seconds = 25) {
+    this.lines.push({ ...this.base('user', seconds), message: { role: 'user', content } });
+    this.hook('UserPromptSubmit');
   }
   say(text, out = 450) {
     this.lines.push({ ...this.base('assistant', 9), message: { id: `msg_${randomUUID().slice(0, 12)}`, role: 'assistant', model: 'demo', content: [{ type: 'text', text }], usage: this.usage(out) } });
@@ -98,10 +106,22 @@ class Transcript {
   tool(name, input, result, { error = false, seconds = 6 } = {}) {
     const id = `toolu_${randomUUID().replace(/-/g, '').slice(0, 22)}`;
     this.lines.push({ ...this.base('assistant', 5), message: { id: `msg_${randomUUID().slice(0, 12)}`, role: 'assistant', model: 'demo', content: [{ type: 'tool_use', id, name, input }], usage: this.usage(140) } });
+    this.hook('PreToolUse', { tool_name: name, tool_use_id: id });
     this.lines.push({ ...this.base('user', seconds), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result, is_error: error }] } });
+    // a little under the gap to the next line: the tool finished just before its result was written
+    this.hook(error ? 'PostToolUseFailure' : 'PostToolUse', { tool_name: name, tool_use_id: id, duration_ms: Math.max(40, Math.round(seconds * 1000 * 0.93)) });
     return id;
   }
+  todo(items) {
+    // items: [text, 'pending' | 'in_progress' | 'completed']
+    const todos = items.map(([content, status]) => ({ content, status, activeForm: content }));
+    this.tool('TodoWrite', { todos }, 'Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress.', { seconds: 1 });
+  }
+  glob(pattern, result) {
+    this.tool('Glob', { pattern, path: this.cwd }, result, { seconds: 1 });
+  }
   read(rel) {
+    this.seen.add(rel);
     this.tool('Read', { file_path: join(repo, rel) }, numbered(readFileSync(join(repo, rel), 'utf8')), { seconds: 2 });
   }
   /**
@@ -131,12 +151,15 @@ class Transcript {
     this.lines.push({ type: 'file-history-snapshot', messageId, snapshot: { messageId, trackedFileBackups: tracked, timestamp: new Date(this.t).toISOString() }, isSnapshotUpdate: true });
   }
   write(rel, content) {
+    this.seen.add(rel);
     this.keepBefore(rel);
     put(rel, content);
     this.tool('Write', { file_path: join(repo, rel), content }, `File created successfully at: ${join(repo, rel)}`);
     this.dirty.add(rel);
   }
   edit(rel, after) {
+    // the tool refuses to edit a file it has not read in this session, so it always reads first
+    if (!this.seen.has(rel)) this.read(rel);
     this.keepBefore(rel);
     const before = readFileSync(join(repo, rel), 'utf8');
     put(rel, after);
@@ -150,13 +173,28 @@ class Transcript {
   bash(command, description, result, opts) {
     return this.tool('Bash', { command, description }, result, opts);
   }
+  /** What the tool does before touching anything in a session: recent history and the files there are. */
+  orient() {
+    let log = '';
+    try {
+      log = git('log', '--oneline', '-5');
+    } catch {
+      log = 'fatal: your current branch does not have any commits yet';
+    }
+    this.bash('git log --oneline -5', 'See recent commits', log || '(no commits yet)', { seconds: 1 });
+    const files = git('ls-files', '--', '*.py', '*.tsx', '*.ts').split('\n').filter(Boolean).join('\n');
+    this.glob('**/*.{py,ts,tsx}', files || 'No files found');
+  }
   commit(subject) {
+    // every command below runs against the demo's real repository, so its output is real
+    this.bash('git status --short', 'See what changed', git('status', '--short') || '(nothing to commit)', { seconds: 1 });
     git('add', '-A');
+    this.bash('git add -A && git diff --cached --stat', 'Review what will be committed', git('diff', '--cached', '--stat'), { seconds: 1 });
     const when = new Date(this.t + 4000).toISOString();
     execFileSync('git', [...ID, 'commit', '-q', '-m', subject], { cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } });
     const sha = git('rev-parse', '--short', 'HEAD');
     const stat = git('show', '--stat', '--format=', 'HEAD').split('\n').pop().trim();
-    this.bash(`git add -A && git commit -m "${subject}"`, 'Commit', `[main ${sha}] ${subject}\n ${stat}`);
+    this.bash(`git commit -m "${subject}"`, 'Commit', `[main ${sha}] ${subject}\n ${stat}`);
     return sha;
   }
   /** The tool keeps a copy of every file a turn changed, as the file stood when the turn ended. */
@@ -168,15 +206,19 @@ class Transcript {
     this.backup(which);
   }
   /** A helper: the Agent call in this transcript, and the helper's own transcript beside it. */
-  helper(type, description, prompt, reads, report) {
+  helper(type, description, prompt, reads, report, { greps = [], notes = [] } = {}) {
     const startAt = this.t;
-    const toolId = this.tool('Agent', { subagent_type: type, description, prompt }, report, { seconds: 45 });
     const agentId = randomUUID().replace(/-/g, '').slice(0, 17);
-    const dir = join(claude, 'projects', slug, this.id, 'subagents');
+    this.hook('SubagentStart', { agent_id: agentId });
+    const toolId = this.tool('Agent', { subagent_type: type, description, prompt }, report, { seconds: 30 + 8 * (reads.length + greps.length) });
+    this.hook('SubagentStop', { agent_id: agentId });
+    const dir = join(claude, 'projects', slugOf(this.cwd), this.id, 'subagents');
     mkdirSync(dir, { recursive: true });
     const sub = new Transcript('', startAt + 3000, this.id);
     sub.user(prompt);
+    for (const n of notes) sub.say(n, 120);
     for (const rel of reads) sub.read(rel);
+    for (const [pattern, path, result] of greps) sub.grep(pattern, path, result);
     sub.say(report, 700);
     writeFileSync(join(dir, `agent-${agentId}.jsonl`), sub.lines.map((l) => JSON.stringify({ ...l, isSidechain: true, agentId })).join('\n') + '\n');
     writeFileSync(join(dir, `agent-${agentId}.meta.json`), JSON.stringify({ agentType: type, description, toolUseId: toolId, spawnDepth: 1 }));
@@ -185,15 +227,20 @@ class Transcript {
   done(text, out) {
     this.say(text, out);
     this.snapshot();
+    this.hook('Stop');
   }
   save() {
     this.snapshot();
     this.lines.push({ type: 'ai-title', sessionId: this.id, aiTitle: this.title });
-    const dir = join(claude, 'projects', slug);
+    const dir = join(claude, 'projects', slugOf(this.cwd));
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `${this.id}.jsonl`);
     writeFileSync(file, this.lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
     utimesSync(file, new Date(this.t), new Date(this.t));
+    const hooks = join(claude, 'agenttrace', 'hooks');
+    mkdirSync(hooks, { recursive: true });
+    const all = [{ hook_event_name: 'SessionStart', received_at: new Date(this.start).toISOString(), session_id: this.id, source: 'startup' }, ...this.hooks, { hook_event_name: 'SessionEnd', received_at: new Date(this.t + 2000).toISOString(), session_id: this.id }];
+    writeFileSync(join(hooks, `${this.id}.jsonl`), all.map((h) => JSON.stringify(h)).join('\n') + '\n');
     return this;
   }
 }
@@ -211,7 +258,7 @@ function md(rel, front, body) {
   writeFileSync(full, `---\n${front.trim()}\n---\n${body.trim()}\n`);
 }
 
-const summary = build({ Transcript, at, md, put, repo, record, join });
+const summary = build({ Transcript, at, md, put, repo, record, join, root });
 writeFileSync(join(repo, 'agenttrace.json'), JSON.stringify({ contract: 1, project: 'LectureQA', record: '../lectureqa-record' }, null, 2) + '\n');
 git('add', '-A');
 execFileSync('git', [...ID, 'commit', '-q', '-m', 'Keep a learning record beside the code'], { cwd: repo });

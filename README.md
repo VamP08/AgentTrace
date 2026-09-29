@@ -2,6 +2,8 @@
 
 A local web app that shows a Claude Code session as it happens, and explains it.
 
+**Live preview:** <https://agenttrace-preview.onrender.com> (a static build on made-up demo data, so nothing you do there is saved)
+
 ![A session's story: the first prompt, its figures, and each prompt down a spine with the files it wrote and the commit it made](media/story.png)
 
 It reads the transcript files Claude Code already writes to disk, tails them live, and renders
@@ -11,10 +13,13 @@ every version, the helpers that were spawned with their briefs and reports, and 
 cost in tokens. No model runs inside the app. Everything it explains was written down at build
 time, by hand or by the coding session itself through a skill.
 
-The screenshots here are of the built-in demo, not of anyone's real work: **LectureQA**, a
-student's app that answers questions from their lecture PDFs and cites the page, built over seven
-sessions. Its record teaches what the build ran into: chunking, embeddings, cosine similarity,
-recall@k, grounded answers and prompt injection.
+The screenshots and the preview are of the built-in demo, not of anyone's real work:
+**LectureQA**, a student's app that answers questions from their lecture PDFs and cites the page,
+built over ten sessions across three weeks, plus one exam question asked outside the project. It
+has what real sessions have: a page that could not reach its API, a 2.6 GB download stopped
+halfway, helpers sent to investigate, failing tests, a made-up answer caught, a prompt injection
+from a shared PDF, and a cache bug its own test found. Its record teaches what the build ran into:
+chunking, embeddings, cosine similarity, recall@k, grounded answers, prompt injection, cache keys.
 
 | | |
 |---|---|
