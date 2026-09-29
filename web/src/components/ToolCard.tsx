@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AgentInfo, Event, ToolResultEvent } from '@agenttrace/shared';
 import { gloss } from '@agenttrace/shared';
+import { Fields, asObject, usePlain } from '../reader';
 
 type Call = Extract<Event, { kind: 'tool_call' }>;
 
@@ -22,17 +23,17 @@ export function ToolCard({ call, result, agent, first, durationMs }: { call: Cal
         <span className="name">{call.name}</span>
         <span className="arg" title={headline(call.name, input)}>{headline(call.name, input)}</span>
         {durationMs !== undefined && <span className="dur" title="Wall time, from the hook log">{durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)} s` : `${durationMs} ms`}</span>}
-        <span className={`st ${state}`}>{word}</span>
+        {/* a finished call is the normal case and says nothing; only running and failed are shown */}
+        {state !== 'done' && <span className={`st ${state}`}>{word}</span>}
         <button className={`why ${why ? 'on' : ''}`} onClick={() => setWhy(!why)} aria-pressed={why} title="What this tool does">Why</button>
         <button className={`open ${open ? 'on' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Show input and result" title="Show input and result">
           <span className="chev" aria-hidden />
         </button>
       </div>
       {why && (
-        <div className="explain">
-          {first && <span className="first">First time this tool appears in the session</span>}
+        <p className="explain">
           {g.what} <b>Look at:</b> {g.look}
-        </div>
+        </p>
       )}
       {open && (
         <>
@@ -40,7 +41,7 @@ export function ToolCard({ call, result, agent, first, durationMs }: { call: Cal
           {result && (
             <div className={`pane result ${result.isError ? 'err' : ''}`}>
               <div className="lab">{result.isError ? 'Error' : 'Result'}<span>{result.content.length.toLocaleString()} characters</span></div>
-              <pre>{full || result.content.length <= LIMIT ? result.content : result.content.slice(0, LIMIT)}</pre>
+              <ResultBody text={result.content} full={full} />
               {!full && result.content.length > LIMIT && (
                 <button className="more" onClick={() => setFull(true)}>Show all {result.content.length.toLocaleString()} characters</button>
               )}
@@ -111,10 +112,23 @@ function Input({ name, input, agent }: { name: string; input: Record<string, any
       </div>
     );
   }
+  return <GenericInput input={input} />;
+}
+
+function GenericInput({ input }: { input: Record<string, any> }) {
+  const plain = usePlain();
   return (
     <div className="pane">
       <div className="lab">Input</div>
-      <pre>{JSON.stringify(input, null, 2)}</pre>
+      {plain ? <Fields value={input} /> : <pre>{JSON.stringify(input, null, 2)}</pre>}
     </div>
   );
+}
+
+/** A result's text; in plain view a result that is JSON is shown as fields. */
+function ResultBody({ text, full }: { text: string; full: boolean }) {
+  const plain = usePlain();
+  const obj = plain ? asObject(text) : undefined;
+  if (obj) return <Fields value={obj} />;
+  return <pre>{full || text.length <= LIMIT ? text : text.slice(0, LIMIT)}</pre>;
 }

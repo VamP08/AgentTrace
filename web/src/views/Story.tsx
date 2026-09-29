@@ -26,6 +26,8 @@ interface Props {
 
 /** Turns shown at each end before the middle folds. */
 const EDGE = 3;
+/** Helpers listed before the rest fold; a session can have ninety. */
+const HELPERS = 8;
 
 /** The last digest read per session, so coming back to Story from another tab draws at once. */
 const seen = new Map<string, DigestData>();
@@ -35,6 +37,7 @@ export function Story({ sessionId, session, events, live, batches, agents, onOpe
   const [failed, setFailed] = useState(false);
   const [all, setAll] = useState(false);
   const [wholePrompt, setWholePrompt] = useState(false);
+  const [allHelpers, setAllHelpers] = useState(false);
 
   // A live session is re-read every ten batches, the same cadence the header uses.
   const tick = Math.floor(batches / 10);
@@ -92,6 +95,7 @@ export function Story({ sessionId, session, events, live, batches, agents, onOpe
   if (failed) return <div className="empty"><h3>The story could not be read.</h3>The server answered with an error for this session. The Turns view still works.</div>;
   if (!d) return <div className="empty small" aria-busy="true"><h3>Reading the session…</h3>The story joins the transcript, the file backups, git and the record, so it is built when you open it.</div>;
 
+  const oneKind = d.helpers.length > 1 && d.helpers.every((h) => h.agentType === d.helpers[0].agentType);
   const first = turns[0]?.prompt ?? d.asked[0] ?? '';
   const long = first.length > 320;
   const folded = !all && turns.length > EDGE * 2 + 1;
@@ -129,7 +133,7 @@ export function Story({ sessionId, session, events, live, batches, agents, onOpe
 
         <section className="st-sec" aria-labelledby="st-turns">
           <header>
-            <h2 id="st-turns">Turns <small>{turns.length}</small></h2>
+            <h2 id="st-turns">Your prompts <small>{turns.length}</small></h2>
             <button className="st-link" onClick={() => onView('Turns')}>Every call, in Turns</button>
           </header>
           {turns.length === 0 && <p className="st-note">{events.length === 0 ? 'Reading the transcript…' : 'No prompt was typed in this session.'}</p>}
@@ -244,15 +248,23 @@ export function Story({ sessionId, session, events, live, batches, agents, onOpe
 
         {d.helpers.length > 0 && (
           <section className="st-sec" aria-labelledby="st-helpers">
-            <header><h2 id="st-helpers">Helpers <small>{d.helpers.length}</small></h2></header>
+            <header>
+              <h2 id="st-helpers">Helpers <small>{d.helpers.length}</small></h2>
+              {oneKind && <span className="st-note">all {d.helpers[0].agentType}</span>}
+            </header>
             <ul className="st-rows">
-              {d.helpers.map((h, i) => (
+              {(allHelpers ? d.helpers : d.helpers.slice(0, HELPERS)).map((h, i) => (
                 <li key={i}>
-                  <span className="k">{h.agentType}</span>
+                  {!oneKind && <span className="k">{h.agentType}</span>}
                   <span className="p">{h.description}</span>
                 </li>
               ))}
             </ul>
+            {d.helpers.length > HELPERS && (
+              <button className="st-link st-more" onClick={() => setAllHelpers(!allHelpers)}>
+                {allHelpers ? `Show the first ${HELPERS}` : `Show all ${d.helpers.length} helpers`}
+              </button>
+            )}
           </section>
         )}
       </article>

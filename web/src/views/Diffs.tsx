@@ -47,6 +47,13 @@ export function Diffs({ sessionId, events, cwd }: Props) {
   const [filter, setFilter] = useState('');
   const [closedDirs, setClosedDirs] = useState<Set<string>>(new Set());
   const [why, setWhy] = useState(false);
+  // closing the drawer puts focus back on the button that opened it
+  const whyBtn = useRef<HTMLButtonElement>(null);
+  const wasWhy = useRef(false);
+  useEffect(() => {
+    if (wasWhy.current && !why) whyBtn.current?.focus();
+    wasWhy.current = why;
+  }, [why]);
   const [sizes, setSizes] = useState<Record<string, { add: number; del: number }>>({});
   const measured = useRef(new Set<string>());
 
@@ -280,8 +287,9 @@ export function Diffs({ sessionId, events, cwd }: Props) {
 
             <dl className="fx-figs">
               <div><dt>versions</dt><dd>{f.versions.length}</dd></div>
-              <div><dt>lines added</dt><dd>{measuredAll ? `+${totalAdd}` : '…'}</dd></div>
-              <div><dt>lines removed</dt><dd>{measuredAll ? `−${totalDel}` : '…'}</dd></div>
+              {/* counted once every version has been read; a file with more than twelve is never counted, so these stay out */}
+              {measuredAll && <div><dt>lines added</dt><dd>+{totalAdd}</dd></div>}
+              {measuredAll && <div><dt>lines removed</dt><dd>−{totalDel}</dd></div>}
               {reason && reason.touched.length > 0 && <div><dt>turns that wrote it</dt><dd>{reason.touched.join(', ')}</dd></div>}
             </dl>
 
@@ -304,7 +312,7 @@ export function Diffs({ sessionId, events, cwd }: Props) {
                   {reason?.turn && reason.wrote && ` Written in turn ${reason.turn.n} by ${reason.wrote.name}.`}
                   {reason && !reason.wrote && pick.index !== 0 && ' No Write or Edit touched this file in between, so a command or a helper changed it.'}
                 </p>
-                {cur && reason?.turn && reason.wrote && <button className="btn primary" onClick={() => setWhy(true)}>Why this version</button>}
+                {cur && reason?.turn && reason.wrote && <button ref={whyBtn} className="btn primary" onClick={() => setWhy(true)}>Why this version</button>}
               </div>
             </section>
 

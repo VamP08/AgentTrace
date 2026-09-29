@@ -465,7 +465,7 @@ p.rd-a,
 .rd-day-h {
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
   padding: 0 0 4px;

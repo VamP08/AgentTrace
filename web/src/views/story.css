@@ -76,3 +76,4 @@
   .st-fold { grid-column: 2; }
   .st-rows .c { display: none; }
 }
+.st-more { display: inline-block; margin-top: 12px; }

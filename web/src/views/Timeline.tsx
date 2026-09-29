@@ -6,7 +6,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { AgentInfo, Event, ToolCallEvent, ToolResultEvent } from '@agenttrace/shared';
 import { gloss } from '@agenttrace/shared';
 import { ToolCard } from '../components/ToolCard';
-import { plain, said } from '../prompt';
+import { plain as plainText, said } from '../prompt';
+import { usePlain } from '../reader';
 
 interface Turn {
   n: number;
@@ -82,6 +83,8 @@ export function turnState(t: Turn, live: boolean): string {
 
 export function Timeline({ events, agents, loading, parseErrors, batches, live, durations, commits = [], sessionId }: Props) {
   const [show, setShow] = useState<Record<string, boolean>>({ context: false, raw: false });
+  // plain view never shows the raw records, which are JSON the parser did not recognise
+  const plain = usePlain();
   const [follow, setFollow] = useState(true);
   const [openTurns, setOpenTurns] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -130,7 +133,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
           case 'assistant_text': out.push({ key: e.id, kind: 'assistant', ev: e }); break;
           case 'tool_call': out.push({ key: e.id, kind: 'tool', ev: e, result: results.get(e.toolUseId), agent: agentByTool.get(e.toolUseId), first: firstOf.get(e.name) === e.id }); break;
           case 'context': if (show.context) out.push({ key: e.id, kind: 'context', ev: e }); break;
-          case 'raw': if (show.raw) out.push({ key: e.id, kind: 'raw', ev: e }); break;
+          case 'raw': if (show.raw && !plain) out.push({ key: e.id, kind: 'raw', ev: e }); break;
           default: break;
         }
       }
@@ -138,7 +141,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, turns, results, agentByTool, show, openTurns, live, commits]);
+  }, [events, turns, results, agentByTool, show, plain, openTurns, live, commits]);
 
   const virt = useVirtualizer({
     count: rows.length,
@@ -184,7 +187,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
         createPortal(
           <>
             <button className={`btn sm ${show.context ? 'on' : ''}`} onClick={() => setShow({ ...show, context: !show.context })} aria-pressed={show.context}>Context {counts.context}</button>
-            <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>Raw records {counts.raw}</button>
+            {!plain && <button className={`btn sm ${show.raw ? 'on' : ''}`} onClick={() => setShow({ ...show, raw: !show.raw })} aria-pressed={show.raw}>Raw records {counts.raw}</button>}
             {parseErrors > 0 && <span className="pill fail">{parseErrors} unreadable lines</span>}
             {live && !follow && (
               <button className="jump" onClick={() => { setFollow(true); virt.scrollToIndex(0, { align: 'start' }); }}>
@@ -199,7 +202,7 @@ export function Timeline({ events, agents, loading, parseErrors, batches, live, 
         {!loading && turns.length === 0 && (
           <div className="empty">
             <h3>No prompts yet.</h3>
-            This transcript has no turn from you. Toggle Raw records above to see what the file holds.
+            This transcript has no turn from you. {plain ? 'Turn off Plain view in the bar, then Raw records, to see what the file holds.' : 'Toggle Raw records above to see what the file holds.'}
           </div>
         )}
         {!loading && current && <Now turn={current} live={live} turns={turns} events={events} />}
@@ -223,18 +226,20 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
     let calls = 0, failed = 0;
     for (const t of turns) { calls += t.calls; failed += t.failed; for (const f of t.files) files.add(f); }
     const stack = events.filter((e) => e.kind === 'stack_detected').length;
+    // Story counts only what a person typed; this says both, so the two views never disagree
+    const typed = turns.filter((t) => said(t.prompt) !== undefined).length;
     return (
-      <section className="now idle" aria-label="Session summary">
-        <div className="now-h">Session summary</div>
-        <div className="now-grid">
-          <Stat n={turns.length} label={one(turns.length, 'turn', 'turns')} />
-          <Stat n={calls} label={one(calls, 'tool call', 'tool calls')} />
-          <Stat n={files.size} label={one(files.size, 'file changed', 'files changed')} />
-          <Stat n={failed} label="failed" tone={failed ? 'fail' : undefined} />
-          <Stat n={stack} label={one(stack, 'technology', 'technologies')} />
-          <Stat n={span(turns[0]?.startTs, turn.endTs)} label="elapsed" />
-        </div>
-        <p className="now-p">Open a turn below to read what the model did in answer to it. Files changed across the session are listed under Files.</p>
+      <section className="tl-sum" aria-label="Session summary">
+        <dl className="st-figs">
+          <div><dt>{one(turns.length, 'turn', 'turns')}</dt><dd>{turns.length}</dd></div>
+          <div><dt>typed by you</dt><dd>{typed}</dd></div>
+          <div><dt>{one(calls, 'tool call', 'tool calls')}</dt><dd>{calls}</dd></div>
+          <div><dt>{one(files.size, 'file changed', 'files changed')}</dt><dd>{files.size}</dd></div>
+          {failed > 0 && <div className="bad"><dt>failed</dt><dd>{failed}</dd></div>}
+          {stack > 0 && <div><dt>{one(stack, 'technology', 'technologies')}</dt><dd>{stack}</dd></div>}
+          <div><dt>elapsed</dt><dd>{span(turns[0]?.startTs, turn.endTs)}</dd></div>
+        </dl>
+        <p className="now-p">Open a turn to read what the model did in answer to it. The ones the tool sent itself are marked as system messages.</p>
       </section>
     );
   }
@@ -250,7 +255,7 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
       {turn.lastModelText && (
         <div className="now-say">
           <span className="who">Model said</span>
-          <p>{plain(turn.lastModelText)}</p>
+          <p>{plainText(turn.lastModelText)}</p>
         </div>
       )}
       {call && (
@@ -346,7 +351,7 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
         <div className="row assistant">
           <div className="time">{time}</div>
           <div className="who">Model</div>
-          <div className="text">{plain(ev.text)}</div>
+          <div className="text">{plainText(ev.text)}</div>
         </div>
       );
     case 'tool':

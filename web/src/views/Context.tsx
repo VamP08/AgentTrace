@@ -46,7 +46,7 @@ export function Context({ events, hooks }: Props) {
     );
 
   return (
-    <div className="scroll">
+    <div className="scroll ctx-page">
       <section className="explainer" aria-label="How to read this">
         <h3>Context, turn by turn</h3>
         <p>

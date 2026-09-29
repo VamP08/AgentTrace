@@ -250,7 +250,10 @@ a:hover { color: var(--ink-2); }
 .firstrun p { font-size: 16px; line-height: 1.65; color: var(--ink-2); margin: 0 0 10px; }
 
 /* ---------- now panel ---------- */
-.now { margin: 16px 24px 8px; padding: 16px 18px 14px; border: 1px solid var(--hairline-strong); border-left: 2px solid var(--accent); background: var(--surface); }
+.now { margin: 16px 24px 8px; padding: 16px 18px 14px; border: 1px solid var(--hairline-strong); background: var(--surface); }
+.tl-sum { padding: 8px 24px 4px; }
+.tl-sum .st-figs { margin: 8px 0 12px; }
+.tl-sum .now-p { margin: 0 0 12px; }
 .now.idle { border-color: var(--hairline); }
 .now-h { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; font-family: var(--font-ui); color: var(--ink-3); margin-bottom: 10px; }
 .now-ask, .now-say, .now-do { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px 12px; align-items: baseline; margin-bottom: 10px; }
@@ -296,7 +299,7 @@ a:hover { color: var(--ink-2); }
 .row > .who { font-size: 12px; font-weight: 600; color: var(--ink-3); padding-top: 8px; letter-spacing: 0.02em; }
 .row.user > .who { color: var(--ink-2); }
 .row.assistant > .who { color: var(--ink-2); }
-.row.user .text, .row.assistant .text { padding: 8px 0 10px; white-space: pre-wrap; word-break: break-word; }
+.row.user .text, .row.assistant .text { padding: 8px 0 10px; white-space: pre-wrap; word-break: break-word; max-width: 76ch; }
 .row.user .text { font-weight: 500; }
 .row.context .text { padding: 6px 0; color: var(--ink-3); font-size: 12px; }
 .row.context .src { font-family: var(--font-mono); font-size: 12px; margin-right: 8px; color: var(--ink-3); }
@@ -310,17 +313,16 @@ a:hover { color: var(--ink-2); }
 .card .st.done { color: var(--success); }
 .card .st.failed { color: var(--danger); }
 .card .st.running { color: var(--live); }
-.card .why { color: var(--ink-3); font-size: 12px; height: 22px; padding: 0 7px; border-radius: var(--r-s); border: 1px solid var(--hairline); display: grid; place-items: center; white-space: nowrap; }
-.card .why:hover, .card .why.on { color: var(--ink); background: var(--hover); }
+.card .why { color: var(--ink-3); font-size: 13px; height: 22px; padding: 0 4px; display: grid; place-items: center; white-space: nowrap; }
+.card .why:hover, .card .why.on { color: var(--accent-text); }
 .card .open { color: var(--ink-3); width: 22px; height: 22px; display: grid; place-items: center; border-radius: var(--r-s); }
 .card .open:hover { background: var(--hover); color: var(--ink); }
 .card .open .chev { margin: 0; top: -1px; }
 .card .open.on .chev { transform: rotate(45deg); }
 .card .open:not(.on) .chev { transform: rotate(-45deg); }
 .card .dur { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.explain { margin: 2px 0 8px; padding: 8px 10px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--hairline); color: var(--ink-2); font-size: 16px; line-height: 1.6; max-width: 68ch; }
+.explain { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; max-width: 68ch; }
 .explain b { color: var(--ink); font-weight: 500; }
-.explain .first { display: block; color: var(--ink-3); font-size: 12px; margin-bottom: 2px; }
 .pane { border: 1px solid var(--hairline); border-radius: var(--r); background: var(--surface); margin: 4px 0 8px; overflow: hidden; }
 .pane .lab { font-size: 12px; color: var(--ink-3); padding: 6px 10px; border-bottom: 1px solid var(--hairline); display: flex; gap: 10px; }
 .pane pre { padding: 8px 10px; }
@@ -504,7 +506,7 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 .dg-asked { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .dg-asked li { font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 
-.kind { display: inline-block; padding: 1px 6px; border: 1px solid var(--hairline); border-radius: var(--r-s); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.kind { display: inline-block; min-width: 88px; font: 12px var(--font-mono); color: var(--ink-3); white-space: nowrap; }
 
 .dg-notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
 .dg-notes li { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; }
@@ -642,21 +644,32 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 /* a note is information, and is never drawn in the error colour */
 .rd-note { margin: 12px 16px; font-size: 13px; line-height: 1.55; color: var(--ink-3); max-width: var(--measure); }
 
+/* plain view: a tool's input as one line per field, in words */
+.fields { margin: 0; padding: 8px 10px; display: grid; gap: 4px; }
+.fields div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; }
+.fields dt { font: 12px var(--font-mono); color: var(--ink-3); }
+.fields dd { margin: 0; font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.fields-none { margin: 0; padding: 8px 10px; color: var(--ink-3); font-size: 13px; }
+.bar-end .btn.on { color: var(--ink); background: var(--accent-soft); border-color: transparent; box-shadow: none; }
+
+/* a text box shows the same 2px focus ring as every control, not only a 1px border change */
+.bar-search input:focus-visible, .dd-filter:focus-visible, .fx-filter:focus-visible, .srch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+
 /* the start page: what to pick up, when you worked, and each project's last two weeks */
 .home { max-width: 1240px; margin: 0 auto; padding: 48px 32px 96px; }
 .home-cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 0 56px; align-items: start; }
 .home .sec { margin-bottom: 48px; }
 .home .sec h2 { font: 600 22px var(--font-display); padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
-.resume { display: block; width: 100%; text-align: left; padding: 24px 26px; background: var(--surface); border: 1px solid var(--hairline); border-left: 3px solid var(--accent); }
+.resume { display: block; width: 100%; text-align: left; padding: 24px 26px; background: var(--surface); border: 1px solid var(--hairline-strong); }
 .resume:hover { background: var(--raised); }
-.resume-t { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font: 500 28px/1.2 var(--font-display); letter-spacing: -0.015em; color: var(--ink); overflow-wrap: anywhere; }
+.resume-t { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 500 24px/1.25 var(--font-display); letter-spacing: -0.015em; color: var(--ink); overflow-wrap: anywhere; }
 .resume-m { display: block; margin-top: 10px; font: 13px var(--font-mono); color: var(--ink-3); }
 .resume-go { display: inline-block; margin-top: 18px; font-size: 14px; font-weight: 500; color: var(--accent-text); }
 .resume:hover .resume-go { text-decoration: underline; text-underline-offset: 3px; }
 .days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 6px; height: 132px; align-items: end; }
 .day { height: 100%; display: grid; grid-template-rows: 1fr 20px; align-items: end; }
 .day i { display: block; min-height: 2px; background: var(--hairline); }
-.day i.h1 { background: #5119b8; } .day i.h2 { background: #7a2bd6; } .day i.h3 { background: #9b4de8; } .day i.h4 { background: #c084ff; }
+.day i.h1, .day i.h2, .day i.h3, .day i.h4 { background: var(--accent); }
 .day span { font: 11px var(--font-mono); color: var(--ink-3); white-space: nowrap; padding-top: 6px; }
 .projs { list-style: none; margin: 0; padding: 0; }
 .projs li + li { border-top: 1px solid var(--hairline); }
@@ -681,3 +694,12 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
   .rd-nav-end { margin-left: 0; padding-bottom: 8px; flex-wrap: wrap; flex: 1 1 100%; }
   .rd-setup .rd-head h2 { font-size: 28px; }
 }
+
+/* pages that were anchored left at 1920 are centred like the rest */
+.rd-regions > .rd-region { margin-left: auto; margin-right: auto; }
+.ctx-page > .explainer, .ctx-page > .ctx-table { max-width: 1160px; margin-left: auto; margin-right: auto; }
+.ctx-page > .explainer { max-width: 1160px; }
+.ctx-page > .explainer p { max-width: 68ch; }
+.rd-regions .rd-sub { display: flex; gap: 12px; align-items: baseline; margin: 24px 0 6px; font: 600 18px var(--font-display); color: var(--ink); }
+.rd-regions .rd-sub .rd-c { font: 400 13px var(--font-mono); }
+.dg-notes .s { display: block; color: var(--ink-3); font-size: 13px; margin-top: 2px; }

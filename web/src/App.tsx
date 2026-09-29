@@ -12,6 +12,7 @@ import { Story } from './views/Story';
 import { Search } from './views/Search';
 import type { Project as ProjectRow, ProjectIndex } from '@agenttrace/shared';
 import { StackStrip } from './components/StackStrip';
+import { PlainContext, readPlain, savePlain } from './reader';
 
 // Only views that exist. Others arrive when they are built, not before. Story is first and is
 // where a session opens: somebody arriving at a session they did not watch wants what changed and
@@ -40,6 +41,7 @@ export function App() {
   const [view, setView] = useState<ViewId>(WITHOUT_DIGEST ? 'Turns' : 'Story');
   const [query, setQuery] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);
+  const [plainView, setPlainView] = useState(readPlain);
   const [setup, setSetup] = useState(false);
   const [searching, setSearching] = useState(false);
   const [index, setIndex] = useState<ProjectIndex>({ projects: [], misc: [] });
@@ -229,6 +231,7 @@ export function App() {
   const nothing = index.projects.length === 0 && index.misc.length === 0 && s.sessions.length === 0;
 
   return (
+    <PlainContext.Provider value={plainView}>
     <div className="app">
       <a className="skip" href="#main">Skip to the content</a>
       <header className="topbar">
@@ -281,7 +284,8 @@ export function App() {
           </nav>
           <label className="bar-search">
             {/* Search spans every project's record, so it lives in the bar, not inside one project. */}
-            <input type="search" placeholder="Search the record" aria-label="Search the record" onKeyDown={(e) => { const v = e.currentTarget.value.trim(); if (e.key === 'Enter' && v) openSearch(v); }} />
+            {/* While Search is open its own box is the one to type in; leaving Search brings this back empty. */}
+            {!searching && <input type="search" placeholder="Search the record" aria-label="Search the record" onKeyDown={(e) => { const v = e.currentTarget.value.trim(); if (e.key === 'Enter' && v) openSearch(v); }} />}
           </label>
           <div className="bar-end">
             {link === 'connecting' ? (
@@ -291,6 +295,14 @@ export function App() {
             ) : (
               <span className="conn off" role="status" title={lastSeen.current ? `Showing the last data received at ${clock(lastSeen.current)}.` : 'No data has been received yet.'}>Server offline</span>
             )}
+            <button
+              className={`btn quiet ${plainView ? 'on' : ''}`}
+              onClick={() => { savePlain(!plainView); setPlainView(!plainView); }}
+              aria-pressed={plainView}
+              title={plainView ? 'Showing tool inputs as plain fields. Turn off to see the raw JSON and raw records.' : 'Showing raw JSON. Turn on for plain fields.'}
+            >
+              Plain view
+            </button>
             <button className="btn quiet" onClick={() => { setSetup(true); setSearching(false); }}>Setup</button>
             <button className="btn quiet" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
               {theme === 'dark' ? 'Light' : 'Dark'}
@@ -360,6 +372,7 @@ export function App() {
         )}
       </main>
     </div>
+    </PlainContext.Provider>
   );
 }
 
@@ -455,9 +468,9 @@ function Home({ sessions, projects, group, onOpenSession, onOpenProject }: {
               <section className="sec">
                 <h2>{resume.live ? 'Running now' : 'Pick up where you left off'}</h2>
                 <button className="resume" onClick={() => onOpenSession(resume.id)}>
-                  <span className="resume-t">{resume.live && <i className="dot pulse live-dot" />}{resume.title}</span>
+                  <span className="resume-t">{resume.title}</span>
                   <span className="resume-m">
-                    {project(resume)} · {resume.live ? 'running' : ago(resume.updatedAt)} · ran {length(resume.startedAt, resume.updatedAt)} · {mb(resume.bytes)}
+                    {resume.live && <i className="dot pulse live-dot" />}{project(resume)} · {resume.live ? 'running' : ago(resume.updatedAt)} · ran {length(resume.startedAt, resume.updatedAt)} · {mb(resume.bytes)}
                   </span>
                   <span className="resume-go">Open its story</span>
                 </button>
@@ -537,13 +550,20 @@ interface MenuSession {
 function Menu({ label, title, children }: { label: string; title?: string; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  // Closed from the keyboard or by a choice, focus goes back to the menu's own button; left inside
+  // the menu it fell to the page body, and the next Tab started from the top of the page.
+  const close = () => {
+    setOpen(false);
+    btn.current?.focus();
+  };
   useEffect(() => {
     if (!open) return;
     const down = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') close();
     };
     document.addEventListener('mousedown', down);
     window.addEventListener('keydown', key);
@@ -554,10 +574,10 @@ function Menu({ label, title, children }: { label: string; title?: string; child
   }, [open]);
   return (
     <div className="dd" ref={ref}>
-      <button className="dd-btn" aria-expanded={open} aria-haspopup="true" title={title} onClick={() => setOpen(!open)}>
+      <button ref={btn} className="dd-btn" aria-expanded={open} aria-haspopup="true" title={title} onClick={() => setOpen(!open)}>
         <span>{label}</span>
       </button>
-      {open && <div className="dd-menu">{children(() => setOpen(false))}</div>}
+      {open && <div className="dd-menu">{children(close)}</div>}
     </div>
   );
 }

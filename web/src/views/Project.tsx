@@ -181,11 +181,15 @@ function RecordSummary({ base, root, onOpen }: { base: string; root: string; onO
   const rank: Record<string, number> = { high: 0, medium: 1, low: 2 };
   const open = (r.gaps?.data?.gaps ?? []).filter((g) => g.status === 'open').sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3));
   const bySeverity = ['high', 'medium', 'low'].map((s) => [s, open.filter((g) => g.severity === s).length] as const).filter(([, n]) => n > 0);
-  const row = (kind: string, id: string, label: string, title: string, note?: string) => (
+  // a row's detail sits under its title, where it is read with it, not 1,000px away at the right edge
+  const row = (kind: string, id: string, label: string, title: string, detail?: string, date?: string) => (
     <li key={`${kind}:${id}`}>
       <span className="kind">{label}</span>
-      <span className="t"><button className="dg-open" onClick={() => onOpen(kind, id)}>{title}</button></span>
-      {note && <span className="c">{note}</span>}
+      <span className="t">
+        <button className="dg-open" onClick={() => onOpen(kind, id)}>{title}</button>
+        {detail && <span className="s">{detail}</span>}
+      </span>
+      {date && <span className="c">{date}</span>}
     </li>
   );
 
@@ -194,24 +198,27 @@ function RecordSummary({ base, root, onOpen }: { base: string; root: string; onO
       <h3 className="rd-region-h">Where it stands</h3>
       {ms.length > 0 && (
         <>
-          <p className="rd-c">{done} of {ms.length} milestones done.</p>
+          <h4 className="rd-sub">Milestones <span className="rd-c">{done} of {ms.length} done</span></h4>
           <ul className="dg-notes">
             {active.map((m) => row('milestone', m.id, 'in progress', `${m.id} · ${m.title}`, short(m.gate)))}
             {next && row('milestone', next.id, 'next', `${next.id} · ${next.title}`, short(next.gate))}
           </ul>
         </>
       )}
-      <p className="rd-c">
-        {open.length === 0 ? 'No open gaps.' : `${open.length} open gap${open.length === 1 ? '' : 's'}: ${bySeverity.map(([s, n]) => `${n} ${s}`).join(', ')}.`}
-      </p>
+      <h4 className="rd-sub">Open gaps <span className="rd-c">{open.length === 0 ? 'none' : bySeverity.map(([s, n]) => `${n} ${s}`).join(', ')}</span></h4>
       {open.length > 0 && <ul className="dg-notes">{open.slice(0, 3).map((g) => row('gap', g.id, g.severity, `${g.id} · ${g.title}`))}</ul>}
       {r.decisions.length > 0 && (
         <>
-          <p className="rd-c">Latest decisions</p>
-          <ul className="dg-notes">{r.decisions.slice(0, 3).map((d) => row('decision', d.slug, 'decision', d.title, d.date.slice(0, 10)))}</ul>
+          <h4 className="rd-sub">Latest decisions</h4>
+          <ul className="dg-notes">{r.decisions.slice(0, 3).map((d) => row('decision', d.slug, 'decision', d.title, undefined, d.date.slice(0, 10)))}</ul>
         </>
       )}
-      {r.journal[0] && <ul className="dg-notes">{row('journal', r.journal[0].slug, 'last session', r.journal[0].summary || r.journal[0].slug, r.journal[0].date)}</ul>}
+      {r.journal[0] && (
+        <>
+          <h4 className="rd-sub">Last session</h4>
+          <ul className="dg-notes">{row('journal', r.journal[0].slug, r.journal[0].date, r.journal[0].summary || r.journal[0].slug)}</ul>
+        </>
+      )}
       <p className="rd-c">Kept in <code>{root}</code>. Every lesson, decision and document is under Learn.</p>
     </section>
   );
