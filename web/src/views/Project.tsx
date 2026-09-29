@@ -43,32 +43,25 @@ export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
   }, [focus?.n, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (p === undefined) return <div className="empty rd-empty" aria-busy="true">Gathering every session for this repository…</div>;
-  if (p === null) return <div className="empty rd-empty">This project is no longer in the index. Reopen it from the sidebar.</div>;
+  if (p === null) return <div className="empty rd-empty">This project is no longer in the index. Pick it again from the project menu in the bar above.</div>;
 
   const mainCount = p.sessionList.filter((s) => s.primary && !s.byCwdOnly).length;
 
   return (
     <>
-      <header className="head">
-        <div className="row1">
-          <h2 title={p.root}>{p.name}</h2>
-          <span className={`pill ${p.live ? 'live' : ''}`}>{p.live ? 'Live' : 'Idle'}</span>
-          <span className="pill">{p.kind === 'github' ? 'GitHub' : 'not on GitHub yet'}</span>
+      {/* The counts live once, under Overview; the header says which repository and where it is. */}
+      <header className="phead">
+        <div className="phead-1">
+          <h1 title={p.root}>{p.name}</h1>
+          {p.live && <span className="pill live"><i className="dot pulse" />Live</span>}
+          <span className="phead-where">
+            {p.remote ? p.remote.replace(/^https?:\/\//, '').replace(/\.git$/, '') : 'not on GitHub yet'} · {p.root}
+          </span>
         </div>
-        <div className="meta">
-          <span>Working copy <b title={p.root}>{p.root}</b></span>
-          {p.remote && <span>Remote <b>{p.remote.replace(/^https?:\/\//, '').replace(/\.git$/, '')}</b></span>}
-          <span>Sessions <b>{p.sessionList.length}</b></span>
-          <span>Files written <b>{p.edits}</b></span>
-          <span>Tool calls <b>{p.calls}</b></span>
-          {p.failed > 0 && <span>Failed <b>{p.failed}</b></span>}
-        </div>
-        <div className="row2">
-          <div className="seg" role="tablist">
-            {(['Overview', 'Learn', 'Repo files'] as Tab[]).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>
-            ))}
-          </div>
+        <div className="tabs" role="tablist">
+          {(['Overview', 'Learn', 'Repo files'] as Tab[]).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>
+          ))}
         </div>
       </header>
 
@@ -124,7 +117,7 @@ export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
                     <span className="rd-time">{clock(s.updatedAt)}</span>
                     <span className="rd-t">{s.live && <span className="rd-live"><i className="dot pulse" />Live</span>}{s.title}</span>
                     <span className="rd-m">
-                      {s.byCwdOnly ? 'ran here, wrote nothing' : `${s.edits} file${s.edits === 1 ? '' : 's'} written${s.primary ? '' : ', mainly elsewhere'}`} · {s.calls} calls{s.failed ? ` · ${s.failed} failed` : ''}
+                      {s.byCwdOnly ? 'ran here, wrote nothing' : `${s.edits} file${s.edits === 1 ? '' : 's'} written${s.primary ? '' : ', mainly elsewhere'}`} · {s.calls} call{s.calls === 1 ? '' : 's'}{s.failed ? ` · ${s.failed} failed` : ''}
                     </span>
                   </button>
                 ))}

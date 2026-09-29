@@ -61,7 +61,7 @@
 .st-rows .s { display: block; color: var(--ink-3); font-size: 14px; margin-top: 2px; }
 .st-rows .c, .st-rows .t, .st-rows .sha { flex: none; font: 13px var(--font-mono); color: var(--ink-3); }
 .st-rows .sha { color: var(--ink-2); }
-.st-rows .k { flex: none; width: 88px; font: 13px var(--font-mono); color: var(--ink-3); }
+.st-rows .k { flex: none; min-width: 88px; white-space: nowrap; font: 13px var(--font-mono); color: var(--ink-3); }
 .st-open { color: var(--ink); text-align: left; font: inherit; }
 .st-open:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
 

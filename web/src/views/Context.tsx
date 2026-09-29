@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { Event } from '@agenttrace/shared';
 import { buildTurns } from './Timeline';
+import { said } from '../prompt';
 
 interface HookSummary {
   events: { event: string; ts: string; toolName?: string; durationMs?: number; note?: string }[];
@@ -111,10 +112,9 @@ export function Context({ events, hooks }: Props) {
 // Some turns are not typed by a person: the tool injects a bracketed tag. Printing the raw tag
 // makes the table look broken; the row is real and gets said in words instead.
 function label(prompt: string): string {
-  const first = prompt.trim().split('\n')[0];
-  const tag = /^<([a-z][a-z0-9-]*)>?/i.exec(first);
-  if (!tag) return first;
-  return tag[1].toLowerCase() === 'task-notification' ? 'System notification' : 'System message';
+  const typed = said(prompt);
+  if (typed) return typed.split('\n')[0];
+  return /<task-notification>/i.test(prompt) ? 'System notification' : 'System message';
 }
 
 function fmt(n: number): string {

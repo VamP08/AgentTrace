@@ -2,9 +2,8 @@
 // Found from a session's cwd through agenttrace.json. Frontmatter is parsed; bodies stay Markdown.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
-import matter from 'gray-matter';
 import type { CodeWindow, Decision, JournalEntry, LearningEntry, LibraryEntry, ProjectManifest, ProjectRecord, RecordDoc } from '@agenttrace/shared';
-import { readCannotFill, readLibrary, readSources, readVerified, str } from './library.js';
+import { readCannotFill, readFrontmatter, readLibrary, readSources, readVerified, str } from './library.js';
 
 /** Walk up from cwd looking for agenttrace.json; the record path inside may be relative to it. */
 export function findManifest(cwd: string): { manifest: ProjectManifest; root: string; repoDir: string; library?: string } | undefined {
@@ -35,19 +34,11 @@ function list(v: unknown): string[] {
   return Array.isArray(v) ? v.map(String) : typeof v === 'string' && v ? [v] : [];
 }
 
-// gray-matter caches the file object under the raw text before it parses the frontmatter, and only
-// when no options are passed. A YAML error therefore leaves a half-built entry — empty data, body
-// still holding the frontmatter — in that cache, and every later read of the same text gets it back
-// without throwing. Pass an (empty) options object so each read parses for real.
-function frontmatter(text: string) {
-  return matter(text, {});
-}
-
 function readDoc(root: string, name: string, unparsed: ProjectRecord['unparsed']): RecordDoc<any> | undefined {
   const file = join(root, name);
   if (!existsSync(file)) return undefined;
   try {
-    const m = frontmatter(readFileSync(file, 'utf8'));
+    const m = readFrontmatter(file);
     return { updated: str(m.data.updated, undefined as any), data: m.data, body: m.content.trim() };
   } catch (e) {
     unparsed.push({ file: name, error: (e as Error).message });
@@ -64,7 +55,7 @@ function readFolder<T>(root: string, folder: string, required: string, unparsed:
     if (!name.endsWith('.md')) continue;
     const rel = `${folder}/${name}`;
     try {
-      const m = frontmatter(readFileSync(join(dir, name), 'utf8'));
+      const m = readFrontmatter(join(dir, name));
       const value = m.data?.[required];
       if (value === undefined || value === null || value === '') {
         unparsed.push({ file: rel, error: `${rel}: frontmatter did not parse or has no "${required}"` });

@@ -136,11 +136,14 @@ interface Progress {
   recallDays: number;
 }
 
+type LearnTab = 'learning' | 'review' | 'library' | 'stack' | 'decisions' | 'journal' | 'docs';
+
 export function Learn({ base, cwd, focus }: Props) {
   const [record, setRecord] = useState<ProjectRecord | null | undefined>();
   const [pick, setPick] = useState<string>();
   const [type, setType] = useState<string>('all');
-  const [tab, setTab] = useState<'learning' | 'review' | 'library' | 'stack' | 'decisions' | 'journal' | 'docs'>('learning');
+  const [tab, setTab] = useState<LearnTab>('learning');
+  const [showBroken, setShowBroken] = useState(false);
   const [brief, setBrief] = useState<string>();
   const [read, setRead] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<Progress>();
@@ -270,7 +273,7 @@ export function Learn({ base, cwd, focus }: Props) {
       <div className="empty rd-empty">
         <h3>No record for this project yet.</h3>
         The Learn view reads a folder of lessons the coding tool keeps while it builds this repository. No
-        <code> agenttrace.json </code> was found at <code>{cwd}</code>. Open Setup in the sidebar for the two files that turn
+        <code> agenttrace.json </code> was found at <code>{cwd}</code>. Open Setup in the bar above for the two files that turn
         it on; from the next session, lessons appear here.
       </div>
     );
@@ -278,29 +281,51 @@ export function Learn({ base, cwd, focus }: Props) {
 
   const readCount = ordered.filter((l) => read.has(l.slug)).length;
   const docCount = DOCS.filter((k) => record[k]).length;
-  const tabs = {
-    learning: `Lessons ${record.learning.length}`,
-    review: `Review ${dueNow.length}`,
-    library: `Library ${usedHere.size}`,
-    stack: `Stack ${stackRows.length}`,
-    decisions: `Decisions ${record.decisions.length}`,
-    journal: `Journal ${record.journal.length}`,
-    docs: `Plan & gaps ${docCount}`,
+  const tabs: Record<LearnTab, [string, number]> = {
+    learning: ['Lessons', record.learning.length],
+    review: ['Review', dueNow.length],
+    library: ['Library', usedHere.size],
+    stack: ['Stack', stackRows.length],
+    decisions: ['Decisions', record.decisions.length],
+    journal: ['Journal', record.journal.length],
+    docs: ['Plan & gaps', docCount],
+  };
+  // A section opens on its first entry, so the pane never goes on showing the course intro under
+  // Decisions. Lessons keep the one being read; Review opens on the first question due.
+  const firstOf = (t: LearnTab): string | undefined => {
+    if (t === 'learning') return pick && !pick.includes(':') ? pick : undefined;
+    if (t === 'review') return dueNow[0] && `r:${dueNow[0].qid}`;
+    if (t === 'library') { const e = record.library.find((x) => allLibrary || usedHere.has(x.key)); return e && `lib:${e.key}`; }
+    if (t === 'decisions') return record.decisions[0] && `d:${record.decisions[0].slug}`;
+    if (t === 'journal') return record.journal[0] && `j:${record.journal[0].slug}`;
+    if (t === 'docs') { const k = DOCS.find((x) => record[x]); return k && `doc:${k}`; }
+    return undefined;
+  };
+  const openTab = (t: LearnTab) => {
+    setTab(t);
+    setBrief(undefined);
+    setPick(firstOf(t));
   };
 
   return (
-    <div className="split rd-split">
-      <aside className="files rd-rail">
-        <div className="rd-tabs">
+    <div className="rd-learn">
+      <nav className="rd-nav" aria-label="Parts of the record">
+        <div className="rd-nav-tabs" role="tablist">
           {(['learning', 'review', 'library', 'stack', 'decisions', 'journal', 'docs'] as const).map((t) => (
-            <button key={t} className={`btn sm ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>
-              {tabs[t]}
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => openTab(t)}>
+              {tabs[t][0]}<small>{tabs[t][1]}</small>
             </button>
           ))}
         </div>
-        <div className="rd-row rd-briefrow">
+        <div className="rd-nav-end">
+          {record.unparsed.length > 0 && (
+            <button className="rd-warnbtn" aria-expanded={showBroken} onClick={() => setShowBroken(!showBroken)}>
+              {record.unparsed.length} record file{record.unparsed.length > 1 ? 's' : ''} could not be read
+            </button>
+          )}
           <button
-            className="btn sm quiet"
+            className="btn quiet"
+            aria-pressed={brief !== undefined}
             onClick={() => {
               if (brief !== undefined) return setBrief(undefined);
               fetch(`${base.replace(/\/record$/, '/brief')}?format=md`)
@@ -308,9 +333,18 @@ export function Learn({ base, cwd, focus }: Props) {
                 .then(setBrief);
             }}
           >
-            {brief === undefined ? 'What is missing' : 'Hide what is missing'}
+            {brief === undefined ? 'What the record is missing' : 'Close what is missing'}
           </button>
         </div>
+      </nav>
+      {showBroken && (
+        <div className="rd-broken">
+          <p>These files in the record have frontmatter that does not parse, so they are left out of every list here. Fixing the YAML at the top of each brings it back.</p>
+          <ul>{record.unparsed.map((u) => <li key={u.file}><code>{u.file}</code></li>)}</ul>
+        </div>
+      )}
+    <div className="split rd-split">
+      <aside className="files rd-rail">
         {tab === 'learning' && (
           <>
             <div className="rd-progress" aria-label="Lessons read">
@@ -334,10 +368,6 @@ export function Learn({ base, cwd, focus }: Props) {
         )}
         {tab === 'review' && (
           <>
-            <div className="rd-alert">
-              A question comes back {progress?.recallDays ?? 7} days after you last saw it in a lesson. Answering it then is what
-              counts as remembering; answering sooner is practice, and is not counted.
-            </div>
             {dueNow.map((c) => (
               <button key={c.qid} className={`node rd-entry ${pick === `r:${c.qid}` ? 'sel' : ''}`} onClick={() => setPick(`r:${c.qid}`)}>
                 <span className="rd-t">{c.q}</span>
@@ -345,32 +375,30 @@ export function Learn({ base, cwd, focus }: Props) {
               </button>
             ))}
             {waiting.length > 0 && (
-              <p className="rd-c">
+              <p className="rd-note">
                 {waiting.length} more waiting. The next comes back on {day(waiting[0].due)}.
               </p>
             )}
-            {(progress?.cards.length ?? 0) === 0 && (
-              <p className="rd-c">Nothing to review yet. Reveal a question's answer in a lesson and it comes back here after {progress?.recallDays ?? 7} days.</p>
-            )}
+            {(progress?.cards.length ?? 0) === 0 && <p className="rd-note">Nothing to review yet.</p>}
           </>
         )}
         {tab === 'library' && (
           record.library.length === 0 ? (
-            <div className="rd-alert">
+            <div className="rd-note">
               No library is configured for this project. Add a <code>library</code> path to <code>agenttrace.json</code> and
               shared entries appear here, one per concept, reused by every project that uses it.
             </div>
           ) : (
             <>
               {usedHere.size === 0 && !allLibrary && (
-                <div className="rd-alert">Nothing in the shared library is used by this project yet.</div>
+                <div className="rd-note">Nothing in the shared library is used by this project yet.</div>
               )}
               {record.library.filter((e) => allLibrary || usedHere.has(e.key)).map((e) => {
                 const c = completeness(e);
                 return (
                   <button key={e.key} className={`node rd-entry ${pick === `lib:${e.key}` ? 'sel' : ''}`} onClick={() => setPick(`lib:${e.key}`)}>
                     <span className="rd-t">{e.title}</span>
-                    <span className="rd-m">{e.type}{usedHere.has(e.key) ? ' · used here' : ' · another project'} · {c.written} of {c.fillable} slots</span>
+                    <span className="rd-m">{e.type}{usedHere.has(e.key) ? '' : ' · from another project'} · {c.written === c.fillable ? 'complete' : `${c.written} of ${c.fillable} parts written`}</span>
                   </button>
                 );
               })}
@@ -386,13 +414,13 @@ export function Learn({ base, cwd, focus }: Props) {
         )}
         {tab === 'stack' && (
           stackRows.length === 0 ? (
-            <div className="rd-alert">
+            <div className="rd-note">
               No <code>stack.md</code> in this record yet, so there is nothing to compare the lessons against.
             </div>
           ) : (
             <>
               <div className="rd-progress" aria-label="Technologies anchored in this project">
-                <span>{stackRows.filter((r) => r.lesson).length} of {stackRows.length} anchored here</span>
+                <span>{stackRows.filter((r) => r.lesson).length} of {stackRows.length} have a lesson in this project</span>
                 <i><b style={{ width: `${(stackRows.filter((r) => r.lesson).length / stackRows.length) * 100}%` }} /></i>
               </div>
               {stackRows.map((r) => (
@@ -405,9 +433,9 @@ export function Learn({ base, cwd, focus }: Props) {
                   <span className="rd-t">{r.name}</span>
                   <span className="rd-m">
                     {r.lesson
-                      ? `${r.category} · anchored in this project`
+                      ? `${r.category} · has a lesson here`
                       : r.entry
-                        ? `${r.category} · explained, but not anchored here`
+                        ? `${r.category} · explained in the library, no lesson here yet`
                         : `${r.category} · nothing written yet`}
                   </span>
                 </button>
@@ -436,9 +464,6 @@ export function Learn({ base, cwd, focus }: Props) {
               <span className="rd-m">{record[k] ? `${k}.md${record[k]!.updated ? ` · ${day(record[k]!.updated)}` : ''}` : 'not written yet'}</span>
             </button>
           ))}
-        {record.unparsed.length > 0 && (
-          <div className="rd-alert">{record.unparsed.length} file{record.unparsed.length > 1 ? 's' : ''} could not be parsed: {record.unparsed.map((u) => u.file).join(', ')}</div>
-        )}
       </aside>
 
       <section className="rd-pane">
@@ -452,7 +477,7 @@ export function Learn({ base, cwd, focus }: Props) {
             <Markdown text={brief} onLink={openSlug} />
           </div>
         )}
-        {brief === undefined && !pick && (
+        {brief === undefined && !pick && tab === 'learning' && (
           <div className="empty rd-empty">
             <h3>{record.project}: {record.learning.length} lessons, in the order they were needed.</h3>
             Each lesson opens on the lines of your own code where the idea lives, then explains it, then asks you two or three
@@ -461,7 +486,20 @@ export function Learn({ base, cwd, focus }: Props) {
             <div className="rd-row">
               <button className="btn primary" onClick={() => setPick((ordered.find((l) => !read.has(l.slug)) ?? ordered[0])?.slug)}>Start</button>
             </div>
-
+          </div>
+        )}
+        {brief === undefined && !pick && tab === 'review' && (
+          <div className="empty rd-empty">
+            <h3>{dueNow.length > 0 ? `${dueNow.length} question${dueNow.length === 1 ? '' : 's'} due.` : 'Nothing is due.'}</h3>
+            A question comes back {progress?.recallDays ?? 7} days after you last saw its answer in a lesson. Answering it then is
+            what counts as remembering; answering sooner is practice, and is not counted.
+            {(progress?.cards.length ?? 0) === 0 && ' Reveal an answer in any lesson and its question starts its seven days.'}
+          </div>
+        )}
+        {brief === undefined && !pick && tab !== 'learning' && tab !== 'review' && (
+          <div className="empty rd-empty">
+            <h3>{tab === 'stack' ? 'Every technology this project uses.' : 'Nothing here yet.'}</h3>
+            {tab === 'stack' ? 'Pick one on the left for its lesson here, or its entry in the shared library.' : 'This part of the record has no entries.'}
           </div>
         )}
         {brief === undefined && entry && pick && !pick.includes(':') && (
@@ -582,6 +620,7 @@ export function Learn({ base, cwd, focus }: Props) {
           ) : null;
         })()}
       </section>
+    </div>
     </div>
   );
 }

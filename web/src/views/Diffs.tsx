@@ -15,6 +15,8 @@ import './files.css';
 interface Props {
   sessionId: string;
   events: Event[];
+  /** the session's working folder; the tree names folders from here */
+  cwd?: string;
 }
 
 type Pick = { file: TrackedFile; index: number } | { file: TrackedFile; index: 'now' };
@@ -34,7 +36,7 @@ const MIN_GAP = 5;
 
 const key = (path: string, index: number | 'now') => `${path}|${index}`;
 
-export function Diffs({ sessionId, events }: Props) {
+export function Diffs({ sessionId, events, cwd }: Props) {
   const [files, setFiles] = useState<TrackedFile[]>([]);
   const [pick, setPick] = useState<Pick>();
   const [before, setBefore] = useState<string>();
@@ -165,21 +167,27 @@ export function Diffs({ sessionId, events }: Props) {
     return { rows: cut ? out.slice(0, WINDOW) : out, stats: { add, del }, hidden: cut ? out.length - WINDOW : 0 };
   }, [before, after, opened, whole]);
 
-  // The tree: files under the folder they sit in, folders in the order their first file was touched.
+  // The tree: files under the folder they sit in, named from the session's own folder. A file
+  // outside it (a memory file, a scratchpad) is named by its last two folders and marked outside;
+  // cutting every path at whatever the files happened to share gave names like "e--Work-Live-code".
   const tree = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const shown = q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files;
-    const root = commonDir(files.map((f) => f.path));
+    const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const root = norm(cwd ?? commonDir(files.map((f) => f.path)));
     const dirs = new Map<string, TrackedFile[]>();
     for (const f of shown) {
-      const rel = f.path.slice(root.length).replace(/^[\\/]/, '');
-      const parts = rel.split(/[\\/]/);
+      const p = norm(f.path);
+      const inside = root && p.toLowerCase().startsWith(root.toLowerCase() + '/');
+      const parts = (inside ? p.slice(root.length + 1) : p).split('/');
       parts.pop();
-      const dir = parts.join('/') || '.';
+      const dir = inside ? parts.join('/') || '.' : `outside · ${parts.slice(-2).join('/')}`;
       dirs.set(dir, [...(dirs.get(dir) ?? []), f]);
     }
-    return { root, dirs: [...dirs.entries()] };
-  }, [files, filter]);
+    // the project's own folders first, then what lies outside it
+    const list = [...dirs.entries()].sort((a, b) => Number(a[0].startsWith('outside')) - Number(b[0].startsWith('outside')));
+    return { root, dirs: list };
+  }, [files, filter, cwd]);
 
   const f = pick?.file;
   const idx = pick ? (pick.index === 'now' ? f!.versions.length : pick.index) : 0;
@@ -434,6 +442,7 @@ function spread(at: number[]): number[] {
 }
 function shortDir(dir: string): string {
   if (dir === '.') return 'top folder';
+  if (dir.startsWith('outside')) return dir;
   const parts = dir.split('/');
   return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : dir;
 }

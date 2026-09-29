@@ -6,6 +6,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { AgentInfo, Event, ToolCallEvent, ToolResultEvent } from '@agenttrace/shared';
 import { gloss } from '@agenttrace/shared';
 import { ToolCard } from '../components/ToolCard';
+import { plain, said } from '../prompt';
 
 interface Turn {
   n: number;
@@ -249,7 +250,7 @@ function Now({ turn, live, turns, events }: { turn: Turn; live: boolean; turns: 
       {turn.lastModelText && (
         <div className="now-say">
           <span className="who">Model said</span>
-          <p>{turn.lastModelText}</p>
+          <p>{plain(turn.lastModelText)}</p>
         </div>
       )}
       {call && (
@@ -327,7 +328,7 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
       <button className={`chapter ${row.open ? 'open' : ''}`} onClick={() => onToggle(t)} aria-expanded={row.open}>
         <span className="chev" aria-hidden />
         <span className="n">{t.n}</span>
-        <span className="p">{t.prompt.split('\n')[0]}{t.images > 0 ? ` [${t.images} image${t.images > 1 ? 's' : ''}]` : ''}</span>
+        <span className="p">{(said(t.prompt) ?? (/<task-notification>/i.test(t.prompt) ? 'System notification' : 'System message')).split('\n')[0]}{t.images > 0 ? ` [${t.images} image${t.images > 1 ? 's' : ''}]` : ''}</span>
         <span className="c">{t.calls} calls</span>
         <span className="c">{t.files.size} files</span>
         {t.failed > 0 && <span className="c fail">{t.failed} failed</span>}
@@ -345,7 +346,7 @@ function RowView({ row, live, durations, sessionId, onToggle }: { row: Row; live
         <div className="row assistant">
           <div className="time">{time}</div>
           <div className="who">Model</div>
-          <div className="text">{ev.text}</div>
+          <div className="text">{plain(ev.text)}</div>
         </div>
       );
     case 'tool':

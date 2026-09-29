@@ -64,9 +64,10 @@
   vertical-align: baseline;
   text-align: left;
 }
+/* Prose stops at the measure; code and diagrams take the whole column. Held to the measure, a code
+   window stopped at 640px on a 1920px screen with every long line cut. */
 .rd-read pre.code {
   margin: 0 0 14px;
-  max-width: var(--measure);
   background: var(--raised);
 }
 .rd-read .diagram {
@@ -75,7 +76,6 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r);
   background: var(--surface);
-  max-width: var(--measure);
   overflow-x: auto;
 }
 .rd-read .diagram svg { max-width: 100%; height: auto; }
@@ -159,7 +159,7 @@ p.rd-alert { margin: 12px 0; }
    Below 900px the sheet's own single-column rule takes over, so this starts above it. */
 @media (min-width: 901px) {
   .rd-split { grid-template-columns: var(--rail-list) minmax(0, 1fr); }
-  .rd-pane > .rd-read:not(.rd-lesson) { max-width: calc(var(--measure) + 56px); }
+  .rd-pane > .rd-read:not(.rd-lesson) { max-width: 1080px; }
 }
 
 /* ---------- rail density: 30px rows, 13/12, 16px gutter ---------- */
@@ -309,19 +309,18 @@ button.rd-step:hover { color: var(--ink); }
 }
 
 /* ---------- Learn: the lesson ---------- */
-.rd-lesson { padding: 22px 32px 80px; }
-/* The contents column is only affordable when the body still gets its full measure beside it:
-   at 1440 the pane is ~684px, and 180px of contents plus the gap leaves the code window at ~470px
-   with every long line cut. So the column exists from 1500px up and collapses to a row above the
-   lesson below that — the body keeps the measure at every width, and the code keeps its width. */
+.rd-lesson { padding: 28px 40px 80px; }
+/* The body column takes the pane up to 1000px; its prose still stops at the measure, and its code
+   windows use the rest. The contents column exists from 1500px up and is a row above the lesson
+   below that, so the code never gives its width to the contents. */
 .rd-lesson-grid {
   display: grid;
-  grid-template-columns: minmax(0, var(--measure));
-  gap: 32px;
+  grid-template-columns: minmax(0, 1000px);
+  gap: 40px;
   align-items: start;
 }
 @media (min-width: 1500px) {
-  .rd-lesson-grid { grid-template-columns: minmax(0, var(--measure)) 180px; }
+  .rd-lesson-grid { grid-template-columns: minmax(0, 1000px) 200px; }
   .rd-lesson-grid > .rd-toc { grid-column: 2; grid-row: 1; }
   .rd-lesson-grid > .rd-body { grid-column: 1; grid-row: 1; }
 }
@@ -421,13 +420,14 @@ p.rd-a,
 
 /* ---------- Project: titled regions on the ground, no cards ---------- */
 .rd-regions { padding-bottom: 48px; }
-.rd-region { padding: 22px 28px 26px; }
-.rd-region + .rd-region { border-top: 1px solid var(--hairline); }
+/* held to a readable width: at 1920 a row's two ends were 1,800px apart */
+.rd-region { padding: 32px 40px 8px; max-width: 1160px; }
 .rd-region-h {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ink-3);
-  margin: 0 0 12px;
+  font: 600 22px/1.2 var(--font-display);
+  color: var(--ink);
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
 }
 .rd-region p {
   margin: 0 0 12px;

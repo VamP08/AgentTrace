@@ -216,10 +216,13 @@ export function App() {
   // What the second crumb offers: the sessions of whatever the first crumb names.
   const scopeProject = scope?.kind === 'project' ? index.projects.find((p) => p.id === scope.id) : undefined;
   const scopeName = scopeProject ? scopeProject.name : scope?.kind === 'misc' ? 'No repository' : scope?.kind === 'bots' ? 'Started by programs' : 'All projects';
+  // Newest first, always: a list of sessions is read to find the recent one.
   const scopeSessions: MenuSession[] = useMemo(() => {
-    if (scopeProject) return sessionsOf(scopeProject).map(({ link, session }) => ({ session, note: link.byCwdOnly ? 'no files here' : `${link.edits} file${link.edits === 1 ? '' : 's'}${link.primary ? '' : ', mainly elsewhere'}` }));
     const g = scope?.kind === 'misc' ? misc : scope?.kind === 'bots' ? automated : [];
-    return g.flatMap((x) => x.items.map((session) => ({ session, note: x.folder })));
+    const list = scopeProject
+      ? sessionsOf(scopeProject).map(({ link, session }) => ({ session, note: link.byCwdOnly ? 'no files here' : `${link.edits} file${link.edits === 1 ? '' : 's'}${link.primary ? '' : ', mainly elsewhere'}` }))
+      : g.flatMap((x) => x.items.map((session) => ({ session, note: x.folder })));
+    return list.sort((a, b) => (a.session.updatedAt < b.session.updatedAt ? 1 : -1));
   }, [scopeProject, scope, misc, automated, sessionsOf]);
 
   // Nothing has been found at all: the main pane owns that news.
@@ -329,14 +332,20 @@ export function App() {
             <p>Set <code>CLAUDE_CONFIG_DIR</code> if your transcripts live somewhere else, then reload.</p>
           </div>
         ) : !current ? (
-          <Home sessions={s.sessions} group={scope?.kind === 'misc' ? { label: 'No repository', items: scopeSessions } : scope?.kind === 'bots' ? { label: 'Started by programs', items: scopeSessions } : undefined} onOpenSession={select} onSearch={openSearch} />
+          <Home
+            sessions={s.sessions}
+            projects={[...index.projects].sort((a, b) => (a.lastTs < b.lastTs ? 1 : -1)).slice(0, 10).map((p) => ({ id: p.id, name: p.name, live: !!p.live, lastTs: p.lastTs, sessions: sessionsOf(p).map((x) => x.session) }))}
+            group={scope?.kind === 'misc' ? { label: 'No repository', items: scopeSessions } : scope?.kind === 'bots' ? { label: 'Started by programs', items: scopeSessions } : undefined}
+            onOpenSession={select}
+            onOpenProject={selectProject}
+          />
         ) : (
           <div className="stage">
             <StackStrip events={s.events} />
             {view === 'Story' && <Story sessionId={current.id} session={current} events={s.events} live={current.live} batches={s.batches} agents={s.agents.length} onOpenRecord={openRecord} onView={(v) => setView(v)} />}
             {view === 'Turns' && <Timeline events={s.events} agents={s.agents} loading={s.loading} parseErrors={s.parseErrors} batches={s.batches} live={current.live} durations={hooks?.durations} commits={commits} sessionId={current.id} />}
             {view === 'Context' && <Context events={s.events} hooks={hooks} />}
-            {view === 'Files' && <Diffs sessionId={current.id} events={s.events} />}
+            {view === 'Files' && <Diffs sessionId={current.id} events={s.events} cwd={current.cwd} />}
             {view === 'Helpers' && (
               <Agents
                 sessionId={current.id}
@@ -392,7 +401,13 @@ function ago(iso: string): string {
  * first crumb (no repository, or started by programs), it lists that group's sessions instead,
  * since those groups have no page of their own. Sessions a program started are otherwise left out.
  */
-function Home({ sessions, group, onOpenSession }: { sessions: Session[]; group?: { label: string; items: MenuSession[] }; onOpenSession: (id: string) => void; onSearch: (q: string) => void }) {
+function Home({ sessions, projects, group, onOpenSession, onOpenProject }: {
+  sessions: Session[];
+  projects: { id: string; name: string; live: boolean; lastTs: string; sessions: Session[] }[];
+  group?: { label: string; items: MenuSession[] };
+  onOpenSession: (id: string) => void;
+  onOpenProject: (id: string) => void;
+}) {
   // the previous visit, read once; this visit is written for next time
   const [since] = useState(() => {
     try {
@@ -414,30 +429,102 @@ function Home({ sessions, group, onOpenSession }: { sessions: Session[]; group?:
       </div>
     );
   }
-  const mine = sessions.filter((x) => !x.automated);
+  const mine = sessions.filter((x) => !x.automated).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   const live = mine.filter((x) => x.live);
-  const recent = mine.filter((x) => !x.live).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 10);
-  const fresh = since ? recent.filter((x) => x.updatedAt > since).length : 0;
+  // the one to pick up: a running session if there is one, else the last one touched
+  const resume = live[0] ?? mine[0];
+  const recent = mine.filter((x) => x !== resume).slice(0, 8);
+  const fresh = since ? mine.filter((x) => x.updatedAt > since).length : 0;
+  const days = lastDays(DAYS);
+  const perDay = days.map((d) => mine.filter((x) => dayKey(x.startedAt) === d || dayKey(x.updatedAt) === d).length);
+  const most = Math.max(1, ...perDay);
+  const worked = perDay.filter(Boolean).length;
   return (
     <div className="scroll">
-      <div className="page">
-        <h1 className="page-title">{live.length > 0 ? `${live.length} session${live.length === 1 ? '' : 's'} running now` : 'Nothing is running now'}</h1>
-        <p className="page-lede">
-          {fresh > 0 ? `${fresh} finished since your last visit. ` : ''}Pick a project in the bar above for its whole story, or search every record from the box beside it.
-        </p>
-        {live.length > 0 && (
-          <section className="sec">
-            <h2>Live</h2>
-            <SessionList items={live.map((session) => ({ session, note: project(session) }))} onPick={onOpenSession} />
-          </section>
-        )}
-        <section className="sec">
-          <h2>Latest</h2>
-          {recent.length === 0 ? <p className="page-lede">No sessions yet.</p> : <SessionList items={recent.map((session) => ({ session, note: project(session), fresh: !!since && session.updatedAt > since }))} onPick={onOpenSession} />}
-        </section>
+      <div className="home">
+        <header>
+          <h1 className="page-title">{live.length > 0 ? `${live.length} session${live.length === 1 ? '' : 's'} running now` : 'Nothing is running now'}</h1>
+          <p className="page-lede">
+            {fresh > 0 ? `${fresh} session${fresh === 1 ? '' : 's'} changed since your last visit. ` : ''}
+            {worked > 0 ? `You worked on ${worked} of the last ${DAYS} days.` : `Nothing in the last ${DAYS} days.`}
+          </p>
+        </header>
+        <div className="home-cols">
+          <div>
+            {resume && (
+              <section className="sec">
+                <h2>{resume.live ? 'Running now' : 'Pick up where you left off'}</h2>
+                <button className="resume" onClick={() => onOpenSession(resume.id)}>
+                  <span className="resume-t">{resume.live && <i className="dot pulse live-dot" />}{resume.title}</span>
+                  <span className="resume-m">
+                    {project(resume)} · {resume.live ? 'running' : ago(resume.updatedAt)} · ran {length(resume.startedAt, resume.updatedAt)} · {mb(resume.bytes)}
+                  </span>
+                  <span className="resume-go">Open its story</span>
+                </button>
+              </section>
+            )}
+            <section className="sec">
+              <h2>Your last {DAYS} days</h2>
+              <div className="days" role="img" aria-label={`Sessions per day over the last ${DAYS} days: ${perDay.join(', ')}`}>
+                {days.map((d, i) => (
+                  <div key={d} className="day" title={`${dayLabel(d)}: ${perDay[i]} session${perDay[i] === 1 ? '' : 's'}`}>
+                    <i style={{ height: `${perDay[i] ? 12 + (perDay[i] / most) * 88 : 0}%` }} className={`h${perDay[i] ? Math.min(4, Math.ceil((perDay[i] / most) * 4)) : 0}`} />
+                    <span>{i === 0 || i === days.length - 1 || new Date(d).getDay() === 1 ? dayLabel(d) : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="sec">
+              <h2>Latest</h2>
+              {recent.length === 0 ? <p className="page-lede">No other sessions yet.</p> : <SessionList items={recent.map((session) => ({ session, note: project(session), fresh: !!since && session.updatedAt > since }))} onPick={onOpenSession} />}
+            </section>
+          </div>
+          <aside>
+            <section className="sec">
+              <h2>Projects</h2>
+              {projects.length === 0 && <p className="page-lede">Building the project index…</p>}
+              <ul className="projs">
+                {projects.map((p) => (
+                  <li key={p.id}>
+                    <button onClick={() => onOpenProject(p.id)}>
+                      <span className="t">{p.live && <i className="dot pulse live-dot" />}{p.name}</span>
+                      <span className="marks" aria-hidden>
+                        {days.map((d) => <i key={d} className={p.sessions.some((x) => dayKey(x.updatedAt) === d || dayKey(x.startedAt) === d) ? 'on' : ''} />)}
+                      </span>
+                      <span className="m">{p.sessions.length} session{p.sessions.length === 1 ? '' : 's'} · {ago(p.lastTs)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </aside>
+        </div>
       </div>
     </div>
   );
+}
+
+/** Days shown on the start page's activity strip and each project's marks. */
+const DAYS = 14;
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function lastDays(n: number): string[] {
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) out.push(dayKey(new Date(Date.now() - i * 86400000).toISOString()));
+  return out;
+}
+function dayLabel(key: string): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+function length(from: string, to: string): string {
+  const m = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000));
+  if (!Number.isFinite(m)) return '';
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} h` : `${Math.round(h / 24)} days`;
 }
 
 interface MenuSession {

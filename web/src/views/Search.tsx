@@ -73,7 +73,7 @@ export function Search({ onOpenSession, onOpenRecord, onClose, initial }: Props)
   };
 
   return (
-    <div className="scroll">
+    <div className="scroll srch-page">
       <section className="explainer" aria-label="What this searches">
         <h3>Search the record</h3>
         <p>

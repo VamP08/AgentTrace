@@ -74,6 +74,35 @@ function exercise(v: unknown): LibraryEntry['exercise'] {
 }
 
 /** Every .md under the library root, keyed by its path below that root without the extension. */
+// gray-matter caches the file object under the raw text before it parses the frontmatter, and only
+// when no options are passed. A YAML error therefore leaves a half-built entry (empty data, body
+// still holding the frontmatter) in that cache, and every later read of the same text gets it back
+// without throwing. So an (empty) options object is always passed and each read parses for real.
+
+/**
+ * A record file's frontmatter and body, parsed again only when its size or mtime moves. Opening
+ * Learn read and parsed every lesson, decision, journal entry and library entry on every request:
+ * 1.4 to 3.3 seconds for HRMS's record each time the tab was opened. A failure is kept too, so a
+ * broken file is not re-parsed on every request either.
+ */
+const parsed = new Map<string, { stamp: string; data?: Record<string, any>; content?: string; error?: string }>();
+export function readFrontmatter(file: string): { data: Record<string, any>; content: string } {
+  const s = statSync(file);
+  const stamp = `${s.size}:${s.mtimeMs}`;
+  let hit = parsed.get(file);
+  if (!hit || hit.stamp !== stamp) {
+    try {
+      const m = matter(readFileSync(file, 'utf8'), {});
+      hit = { stamp, data: m.data ?? {}, content: m.content };
+    } catch (e) {
+      hit = { stamp, error: (e as Error).message };
+    }
+    parsed.set(file, hit);
+  }
+  if (hit.error !== undefined) throw new Error(hit.error);
+  return { data: hit.data!, content: hit.content! };
+}
+
 export function readLibrary(root: string): { entries: LibraryEntry[]; unparsed: ProjectRecord['unparsed'] } {
   const entries: LibraryEntry[] = [];
   const unparsed: ProjectRecord['unparsed'] = [];
@@ -94,7 +123,7 @@ export function readLibrary(root: string): { entries: LibraryEntry[]; unparsed: 
       if (!name.endsWith('.md')) continue;
       const key = relative(root, full).split(sep).join('/').replace(/\.md$/, '');
       try {
-        const m = matter(readFileSync(full, 'utf8'), {});
+        const m = readFrontmatter(full);
         const d = m.data ?? {};
         if (!d.title) {
           unparsed.push({ file: key, error: `${key}: frontmatter did not parse or has no "title"` });

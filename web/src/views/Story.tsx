@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Digest as DigestData, Event, Session } from '@agenttrace/shared';
 import { buildTurns } from './Timeline';
+import { plain, said } from '../prompt';
 import './story.css';
 
 interface Props {
@@ -259,21 +260,6 @@ export function Story({ sessionId, session, events, live, batches, agents, onOpe
   );
 }
 
-/** What the person typed, or undefined when the tool wrote the message. A command shows as the command. */
-function said(prompt: string): string | undefined {
-  const t = prompt.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ').trim();
-  const cmd = /<command-name>\s*([^<]+?)\s*<\/command-name>/.exec(t);
-  if (cmd) {
-    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(t)?.[1].trim();
-    return args ? `${cmd[1]} ${args}` : cmd[1];
-  }
-  if (!t || /^<[a-z][a-z0-9-]*>/i.test(t) || /^\[Request interrupted/.test(t)) return undefined;
-  return t;
-}
-/** A reply is Markdown; the story shows its words, not its asterisks and backticks. */
-function plain(md: string): string {
-  return md.replace(/\*\*|__|`/g, '').replace(/^#+\s*/gm, '');
-}
 function clock(iso: string): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });

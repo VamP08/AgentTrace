@@ -603,3 +603,81 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
   .chev { transition: none; }
   .jump { animation: none; }
 }
+
+/* ---------- second usability pass, 2026-09-29 ---------- */
+/* A project page's header, in the same voice as a session's: a real title, where it lives, its tabs. */
+.phead { flex: none; padding: 24px 24px 0; border-bottom: 1px solid var(--hairline); }
+.phead-1 { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.phead h1 { font: 600 30px/1.15 var(--font-display); letter-spacing: -0.015em; }
+.phead-where { font: 13px var(--font-mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.phead .tabs { height: 44px; }
+
+/* section headings that were 14px labels are headings */
+.explainer h3 { font: 600 22px/1.2 var(--font-display); color: var(--ink); margin-bottom: 12px; }
+
+/* Search and Setup sit in the middle of a wide screen, not against its left edge */
+.srch-page > * { max-width: 900px; margin-left: auto; margin-right: auto; }
+.srch-page > .explainer { padding-top: 40px; }
+.srch-page .hit { padding-left: 0; padding-right: 0; }
+.rd-setup { max-width: 860px; margin: 0 auto; padding-top: 40px; }
+.rd-setup .rd-head { justify-content: flex-start; gap: 20px; }
+.rd-setup .rd-head h2 { font-size: 40px; }
+
+/* Learn: its seven parts are a menu across the top, not chips inside the list */
+.rd-learn { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rd-learn > .rd-split { flex: 1; min-height: 0; }
+.rd-nav { flex: none; display: flex; align-items: stretch; gap: 16px; padding: 0 24px; border-bottom: 1px solid var(--hairline); background: var(--surface); }
+.rd-nav-tabs { display: flex; gap: 2px; overflow-x: auto; }
+.rd-nav-tabs button { height: 44px; padding: 0 12px; font-size: 14px; font-weight: 500; color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.rd-nav-tabs button:hover { color: var(--ink); }
+.rd-nav-tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+.rd-nav-tabs small { margin-left: 6px; font: 12px var(--font-mono); color: var(--ink-3); }
+.rd-nav-end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.rd-warnbtn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.rd-warnbtn::before { content: ''; width: 7px; height: 7px; background: var(--danger); }
+.rd-warnbtn:hover { color: var(--ink); }
+.rd-broken { flex: none; padding: 12px 24px 14px; border-bottom: 1px solid var(--hairline); background: var(--surface); font-size: 14px; color: var(--ink-2); }
+.rd-broken p { margin: 0 0 6px; max-width: var(--measure); }
+.rd-broken ul { margin: 0; padding-left: 20px; }
+/* a note is information, and is never drawn in the error colour */
+.rd-note { margin: 12px 16px; font-size: 13px; line-height: 1.55; color: var(--ink-3); max-width: var(--measure); }
+
+/* the start page: what to pick up, when you worked, and each project's last two weeks */
+.home { max-width: 1240px; margin: 0 auto; padding: 48px 32px 96px; }
+.home-cols { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 0 56px; align-items: start; }
+.home .sec { margin-bottom: 48px; }
+.home .sec h2 { font: 600 22px var(--font-display); padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.resume { display: block; width: 100%; text-align: left; padding: 24px 26px; background: var(--surface); border: 1px solid var(--hairline); border-left: 3px solid var(--accent); }
+.resume:hover { background: var(--raised); }
+.resume-t { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font: 500 28px/1.2 var(--font-display); letter-spacing: -0.015em; color: var(--ink); overflow-wrap: anywhere; }
+.resume-m { display: block; margin-top: 10px; font: 13px var(--font-mono); color: var(--ink-3); }
+.resume-go { display: inline-block; margin-top: 18px; font-size: 14px; font-weight: 500; color: var(--accent-text); }
+.resume:hover .resume-go { text-decoration: underline; text-underline-offset: 3px; }
+.days { display: grid; grid-template-columns: repeat(14, 1fr); gap: 6px; height: 132px; align-items: end; }
+.day { height: 100%; display: grid; grid-template-rows: 1fr 20px; align-items: end; }
+.day i { display: block; min-height: 2px; background: var(--hairline); }
+.day i.h1 { background: #5119b8; } .day i.h2 { background: #7a2bd6; } .day i.h3 { background: #9b4de8; } .day i.h4 { background: #c084ff; }
+.day span { font: 11px var(--font-mono); color: var(--ink-3); white-space: nowrap; padding-top: 6px; }
+.projs { list-style: none; margin: 0; padding: 0; }
+.projs li + li { border-top: 1px solid var(--hairline); }
+.projs button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; width: 100%; padding: 12px 8px; text-align: left; align-items: center; }
+.projs button:hover { background: var(--hover); }
+.projs .t { font-size: 15px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projs .m { grid-column: 1 / 3; font: 12px var(--font-mono); color: var(--ink-3); }
+.projs .marks { display: flex; gap: 2px; }
+.projs .marks i { width: 7px; height: 7px; background: var(--hairline); }
+.projs .marks i.on { background: var(--accent); }
+
+@media (max-width: 1100px) {
+  .home-cols { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .home { padding: 28px 16px 64px; }
+  .days { gap: 3px; }
+  .day span { font-size: 10px; }
+  .phead { padding: 16px 14px 0; }
+  .phead h1 { font-size: 24px; }
+  .rd-nav { flex-wrap: wrap; padding: 0 14px; }
+  .rd-nav-end { margin-left: 0; padding-bottom: 8px; flex-wrap: wrap; flex: 1 1 100%; }
+  .rd-setup .rd-head h2 { font-size: 28px; }
+}
