@@ -212,6 +212,10 @@ Built and used on Windows against real sessions. CI runs the tests, the build an
 Windows, macOS and Linux; on macOS and Linux it has not yet been used against real sessions. The
 status-line wrapper has not been confirmed from a terminal session. Not yet published to npm.
 
+AgentTrace reads Claude Code's own files, whose format is not a published interface and can change
+between releases. A line it doesn't understand is kept as a raw record, visible with Plain view off, rather than dropped; if a release
+breaks something, an issue with the Claude Code version helps.
+
 Plain view, on by default in the bar, shows a tool's input and any JSON result as named fields and
 hides the raw transcript records; turn it off to see everything as the transcript holds it.
 

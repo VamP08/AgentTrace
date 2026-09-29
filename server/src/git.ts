@@ -19,7 +19,7 @@ export interface Commit {
 /** The branch a repository publishes: origin's HEAD when known, else main or master, else HEAD. */
 export function defaultBranch(cwd: string): string {
   try {
-    const ref = execFileSync('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf8', timeout: 5_000, windowsHide: true }).trim();
+    const ref = execFileSync('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { cwd, encoding: 'utf8', timeout: 5_000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     if (ref) return ref;
   } catch {
     // no remote HEAD recorded

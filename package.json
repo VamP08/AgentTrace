@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Live, explained view of a Claude Code session: what went in, what came out, and why.",
   "license": "MIT",
+  "keywords": ["claude-code", "claude", "coding-agent", "ai-agents", "transcript", "session-viewer", "diff", "developer-tools", "local-first"],
   "author": "Pratham Rangunwala",
   "repository": {
     "type": "git",
