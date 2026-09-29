@@ -67,6 +67,10 @@ export function Agents({ sessionId, events, agents, agentEvents, live, onLoadAge
       .sort((a, b) => (a.ts < b.ts ? -1 : 1));
   }, [events, agents]);
 
+  // the view opens on the first helper, as Learn opens on its first entry; "pick one" was a question the list already answered
+  useEffect(() => {
+    if (!picked && nodes.length > 0) setPicked(nodes[0].info.agentId);
+  }, [nodes, picked]);
   const node = nodes.find((n) => n.info.agentId === picked);
   // The brief is the first thing the helper was told: the Agent call's prompt when the main
   // transcript has it, otherwise the first prompt in the helper's own transcript (workflows).

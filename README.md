@@ -2,12 +2,24 @@
 
 A local web app that shows a Claude Code session as it happens, and explains it.
 
+![A session's story: the first prompt, its figures, and each prompt down a spine with the files it wrote and the commit it made](media/story.png)
+
 It reads the transcript files Claude Code already writes to disk, tails them live, and renders
 each session as turns: what you asked, what the model did in answer, every tool call with a
 plain-language line the first time that tool appears, the files that changed with a diff for
 every version, the helpers that were spawned with their briefs and reports, and what each turn
 cost in tokens. No model runs inside the app. Everything it explains was written down at build
 time, by hand or by the coding session itself through a skill.
+
+The screenshots here are of the built-in demo, not of anyone's real work: **LectureQA**, a
+student's app that answers questions from their lecture PDFs and cites the page, built over seven
+sessions. Its record teaches what the build ran into: chunking, embeddings, cosine similarity,
+recall@k, grounded answers and prompt injection.
+
+| | |
+|---|---|
+| ![Files: the tree, versions on the session clock, and the diff](media/files.png) | ![Learn: a lesson opened on the code where the idea lives](media/lesson.png) |
+| ![The start page: what to pick up, the last fourteen days, and each project](media/home.png) | ![A project's overview: milestones, open gaps, decisions](media/overview.png) |
 
 ## What it reads
 
@@ -23,16 +35,24 @@ time, by hand or by the coding session itself through a skill.
 
 ## Run it
 
-Requires Node 20 or later.
+Requires Node 20 or later, and git for the demo.
 
 ```
-npx agenttrace
+git clone https://github.com/VamP08/AgentTrace.git
+cd AgentTrace
+npm install
+npm run build
+npm start          # your own Claude Code sessions, from ~/.claude
+npm run demo       # or the LectureQA demo, if you want to look first
 ```
 
-That starts the server and the page on one port, prints the URL and opens a browser.
-`AGENTTRACE_PORT` moves it off 4747.
+`npm start` starts the server and the page on one port, prints the URL and opens a browser.
+`AGENTTRACE_PORT` moves it off 4747. `npm run demo` builds the demo under your temp folder, a
+real git repository included, and opens the app on port 4750 with `CLAUDE_CONFIG_DIR` pointed at
+it, so your own sessions are never read. It is written by `scripts/demo.mjs`, in the coding
+tool's own file formats.
 
-From a clone, for development:
+For development:
 
 ```
 npm install
@@ -126,5 +146,12 @@ npx tsx server/test/bench.ts ~/.claude/projects/<project>/<session>.jsonl
 
 Built and verified on Windows against real sessions. Every path is derived from `CLAUDE_CONFIG_DIR`
 or the home directory and joined with `node:path`, so macOS and Linux should work, but nothing has
-been run there yet. The status-line wrapper has not been confirmed from a terminal session. The
-design pass over the views is still ahead.
+been run there yet. The status-line wrapper has not been confirmed from a terminal session. Not
+yet published to npm.
+
+Plain view, on by default in the bar, shows a tool's input and any JSON result as named fields and
+hides the raw transcript records; turn it off to see everything as the transcript holds it.
+
+## License
+
+MIT

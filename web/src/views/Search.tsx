@@ -5,6 +5,7 @@
 // lesson leads to the decision that named the same file and to the commits that came out of it.
 import { useEffect, useRef, useState } from 'react';
 import type { Hit, Link, SearchResult } from '@agenttrace/shared';
+import { plain } from '../prompt';
 
 interface Props {
   onOpenSession: (id: string) => void;
@@ -124,7 +125,7 @@ export function Search({ onOpenSession, onOpenRecord, onClose, initial }: Props)
             <h4><button className="hit-open" onClick={() => onOpenRecord(h.project, h.kind, h.id)}>{h.title}</button></h4>
             <span className="c">{h.project || 'shared library'}{h.summary && h.kind !== 'stack' ? ` · ${h.summary}` : ''}</span>
           </div>
-          <p className="hit-s">{h.snippet}</p>
+          <p className="hit-s">{plain(h.snippet)}</p>
           <div className="hit-f">
             <span className="c">{KIND_SAYS[h.kind]} · matched in {h.matched.join(', ')}</span>
           </div>

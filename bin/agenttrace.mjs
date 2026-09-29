@@ -13,6 +13,13 @@ if (!existsSync(entry) || !existsSync(join(root, 'web', 'dist', 'index.html'))) 
   process.exit(1);
 }
 
+// --demo: build a made-up project under the temp folder and open the app on that instead of ~/.claude
+if (process.argv.includes('--demo')) {
+  await import(pathToFileURL(join(root, 'scripts', 'demo.mjs')).href);
+  // the demo script starts the app itself, pointed at the demo
+  await new Promise(() => {});
+}
+
 /** Hand the URL to whatever the desktop uses. A headless machine has none; the printed URL still works. */
 function openBrowser(url) {
   const cmd =

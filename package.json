@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "description": "Live, explained view of a Claude Code session: what went in, what came out, and why.",
   "license": "MIT",
+  "author": "Pratham Rangunwala",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VamP08/AgentTrace.git"
+  },
+  "homepage": "https://github.com/VamP08/AgentTrace#readme",
+  "bugs": "https://github.com/VamP08/AgentTrace/issues",
   "type": "module",
   "bin": {
     "agenttrace": "bin/agenttrace.mjs"
@@ -15,7 +22,9 @@
     "shared/package.json",
     "web/dist/",
     "hooks/",
-    "skill/"
+    "skill/",
+    "scripts/demo.mjs",
+    "scripts/demo/"
   ],
   "workspaces": [
     "shared",
@@ -28,7 +37,8 @@
     "start": "node bin/agenttrace.mjs",
     "test": "npm test --workspaces --if-present",
     "typecheck": "tsc -b && tsc --noEmit -p web",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "demo": "node scripts/demo.mjs"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
