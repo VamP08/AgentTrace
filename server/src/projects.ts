@@ -28,13 +28,13 @@ interface SessionFacts {
 
 const GIT_COMMIT = /\bgit\b[^\n|&;]*\bcommit\b/;
 /** git prints "[main 1a2b3c4] subject" for every commit it makes. */
-const COMMIT_LINE = /^\[[^\]\n]* ([0-9a-f]{7,40})\]/m;
+const COMMIT_LINE = /^\[[^\]\n]* ([0-9a-f]{7,40})\] ?(.*)$/m;
 
-/** Every commit the transcript shows being made: the hash git printed, and the folder the command ran in. */
-export function commitsMade(events: Event[], session: Session): { sha: string; cwd: string }[] {
+/** Every commit the transcript shows being made: the hash and subject git printed, when, and the folder the command ran in. */
+export function commitsMade(events: Event[], session: Session): { sha: string; cwd: string; subject: string; ts: string }[] {
   const results = new Map<string, string>();
   for (const e of events) if (e.kind === 'tool_result') results.set(e.toolUseId, e.content);
-  const out: { sha: string; cwd: string }[] = [];
+  const out: { sha: string; cwd: string; subject: string; ts: string }[] = [];
   for (const e of events) {
     if (e.kind !== 'tool_call' || e.name !== 'Bash') continue;
     const command = (e.input as Record<string, unknown> | undefined)?.command;
@@ -42,8 +42,8 @@ export function commitsMade(events: Event[], session: Session): { sha: string; c
     const result = results.get(e.toolUseId) ?? '';
     // A quiet commit prints nothing; when the same command then asks git log for it, the first
     // line of that log is the commit just made.
-    const m = COMMIT_LINE.exec(result) ?? (/git\s+log/.test(command) ? /^([0-9a-f]{7,40}) /m.exec(result) : null);
-    if (m) out.push({ sha: m[1], cwd: e.cwd ?? session.cwd });
+    const m = COMMIT_LINE.exec(result) ?? (/git\s+log/.test(command) ? /^([0-9a-f]{7,40}) (.*)$/m.exec(result) : null);
+    if (m) out.push({ sha: m[1], cwd: e.cwd ?? session.cwd, subject: (m[2] ?? '').trim(), ts: e.ts });
   }
   return out;
 }

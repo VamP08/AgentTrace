@@ -16,8 +16,12 @@ import { StackStrip } from './components/StackStrip';
 // Only views that exist. Others arrive when they are built, not before. Digest is first and is
 // where a session opens: somebody arriving at a session they did not watch wants what changed and
 // why before they want the turn-by-turn.
-const VIEWS = [{ id: 'Digest' }, { id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
-type ViewId = (typeof VIEWS)[number]['id'];
+const ALL_VIEWS = [{ id: 'Digest' }, { id: 'Turns' }, { id: 'Files' }, { id: 'Helpers' }, { id: 'Context' }] as const;
+// M12 measures whether the digest helps, so the same app must be able to run without it:
+// `?study=without` hides the Digest view and sessions open on Turns, as they did before M10.
+const WITHOUT_DIGEST = new URLSearchParams(location.search).get('study') === 'without';
+const VIEWS = ALL_VIEWS.filter((v) => !(WITHOUT_DIGEST && v.id === 'Digest'));
+type ViewId = (typeof ALL_VIEWS)[number]['id'];
 
 function readTheme(): 'dark' | 'light' {
   try {
@@ -31,7 +35,7 @@ function readTheme(): 'dark' | 'light' {
 
 export function App() {
   const [s, dispatch] = useReducer(reduce, initial);
-  const [view, setView] = useState<ViewId>('Digest');
+  const [view, setView] = useState<ViewId>(WITHOUT_DIGEST ? 'Turns' : 'Digest');
   const [query, setQuery] = useState('');
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(readTheme);

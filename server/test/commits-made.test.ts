@@ -14,7 +14,7 @@ describe('commitsMade', () => {
       { kind: 'tool_call', id: 'b3', ts: 't5', sessionId: 's1', toolUseId: 'b3', name: 'Bash', input: { command: 'git log --oneline' } },
       { kind: 'tool_result', id: 'b3:r', ts: 't6', sessionId: 's1', toolUseId: 'b3', content: '[main 9999999] not a commit being made', isError: false },
     ];
-    expect(commitsMade(events, session('s1', 'E:\\r\\hrms'))).toEqual([{ sha: '1a2b3c4', cwd: 'E:\\r\\hrms' }]);
+    expect(commitsMade(events, session('s1', 'E:\\r\\hrms'))).toMatchObject([{ sha: '1a2b3c4', cwd: 'E:\\r\\hrms' }]);
     expect(sessionFacts(events, session('s1', 'E:\\r\\hrms'), []).commits).toEqual(['1a2b3c4']);
   });
 

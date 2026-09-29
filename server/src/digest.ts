@@ -6,6 +6,7 @@ import { statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { AgentInfo, Digest, DigestCommit, DigestEdit, DigestNote, Event, ProjectRecord, Session } from '@agenttrace/shared';
 import { trackedFiles } from './fileHistory.js';
+import { commitsMade } from './projects.js';
 
 /**
  * The reader's own words, and only those. Two kinds of text arrive as a user message without a
@@ -121,6 +122,18 @@ export function buildDigest(
   commits: DigestCommit[],
   records: ProjectRecord[],
 ): Digest {
+  // The commits this session's own transcript shows being made, and only those. Every commit in the
+  // time window used to count, so a session left open across days claimed 228, most of them other
+  // sessions'. The transcript is the authority, as `transcript-files-are-the-source-of-truth` says:
+  // git adds its subject and time when it still has the commit, and a commit it no longer has —
+  // history rewritten since — is listed from what the transcript printed rather than dropped.
+  const inWindow = commits;
+  const byHash = new Map<string, DigestCommit>();
+  for (const m of commitsMade(events, session)) {
+    const g = inWindow.find((c) => c.sha.startsWith(m.sha) || m.sha.startsWith(c.sha));
+    if (!byHash.has(m.sha)) byHash.set(m.sha, g ?? { sha: m.sha, subject: m.subject, ts: m.ts, repo: m.cwd.split(/[\\/]/).filter(Boolean).pop() });
+  }
+  commits = [...byHash.values()].sort((a, b) => (a.ts < b.ts ? 1 : -1));
   const edits = editsOf(events, session);
   const asked = prompts(events);
   const wrote = wroteIn(records, session.id);

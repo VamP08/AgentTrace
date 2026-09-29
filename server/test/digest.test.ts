@@ -48,6 +48,11 @@ const events: Event[] = [
   { kind: 'user', id: 'u1', ts: '2026-09-03T10:00:00.000Z', sessionId: 'sess-1', text: 'Write the tailer.\n<system-reminder>ignore me</system-reminder>', images: 0 },
   { kind: 'user', id: 'u2', ts: '2026-09-03T10:05:00.000Z', sessionId: 'sess-1', agentId: 'agent-1', text: 'a subagent brief', images: 0 },
   { kind: 'tool_call', id: 't1', ts: '2026-09-03T10:06:00.000Z', sessionId: 'sess-1', toolUseId: 'tu1', name: 'Write', input: {} },
+  { kind: 'tool_call', id: 't2', ts: '2026-09-03T12:44:00.000Z', sessionId: 'sess-1', toolUseId: 'tu2', name: 'Bash', input: { command: 'git commit -q -m "Tail by byte offset"' } },
+  { kind: 'tool_result', id: 'r2', ts: '2026-09-03T12:44:01.000Z', sessionId: 'sess-1', toolUseId: 'tu2', content: '[main a1b2c3d] Tail by byte offset', isError: false },
+  // a commit whose history was rewritten since: git no longer has it, the transcript still shows it
+  { kind: 'tool_call', id: 't3', ts: '2026-09-03T12:46:00.000Z', sessionId: 'sess-1', toolUseId: 'tu3', name: 'Bash', input: { command: 'git commit -m "Squashed away later"' } },
+  { kind: 'tool_result', id: 'r3', ts: '2026-09-03T12:46:01.000Z', sessionId: 'sess-1', toolUseId: 'tu3', content: '[main beef123] Squashed away later', isError: false },
   { kind: 'tool_result', id: 'r1', ts: '2026-09-03T10:06:01.000Z', sessionId: 'sess-1', toolUseId: 'tu1', content: 'boom', isError: true },
   snapshot('s2', '2026-09-03T11:00:00.000Z', { 'server/src/parse.ts': { backup: 'bbbbbbbbbbbbbbbb@v1', version: 1, backupTime: '2026-09-03T10:30:00.000Z', dir: `${CWD}/server/src` } }),
   snapshot('s1', '2026-09-03T12:00:00.000Z', {
@@ -82,7 +87,11 @@ const record: ProjectRecord = {
   unparsed: [],
 };
 
-const commits = [{ sha: 'a1b2c3d', subject: 'Tail by byte offset', ts: '2026-09-03T12:45:00.000Z', repo: 'Watcher' }];
+// Two commits fall in the session's time window; its transcript shows it making only the first.
+const commits = [
+  { sha: 'a1b2c3d', subject: 'Tail by byte offset', ts: '2026-09-03T12:45:00.000Z', repo: 'Watcher' },
+  { sha: 'ffff999', subject: 'Another session committed this', ts: '2026-09-03T12:50:00.000Z', repo: 'Watcher' },
+];
 
 describe('buildDigest', () => {
   const d = buildDigest(session, events, [{ agentId: 'agent-1', agentType: 'Explore', description: 'find the tailer', toolUseId: 'tu9', spawnDepth: 1, file: 'a.jsonl' }], commits, [record]);
@@ -136,11 +145,14 @@ describe('buildDigest', () => {
 
   it('counts what a reader would count', () => {
     // turns counts things a person asked for, so the reminder and the notification are not turns
-    expect(d.counts).toEqual({ turns: 1, calls: 1, failed: 1, files: 2, edits: 3 });
+    expect(d.counts).toEqual({ turns: 1, calls: 3, failed: 1, files: 2, edits: 3 });
   });
 
   it('carries the commits and the helpers through', () => {
-    expect(d.commits[0].subject).toBe('Tail by byte offset');
+    // only the commit the transcript shows this session making; the other was in the window, not its own
+    expect(d.commits.map((c) => c.sha)).toEqual(['beef123', 'a1b2c3d']);
+    // git's subject where git still has it, the transcript's where it does not
+    expect(d.commits.map((c) => c.subject)).toEqual(['Squashed away later', 'Tail by byte offset']);
     expect(d.helpers).toEqual([{ agentType: 'Explore', description: 'find the tailer' }]);
   });
 
