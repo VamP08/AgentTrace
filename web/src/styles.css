@@ -149,7 +149,7 @@ a:hover { color: var(--ink-2); }
 .topbar { flex: none; position: relative; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--hairline); }
 .bar-1 { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 24px; }
 .brand { display: flex; align-items: center; gap: 10px; flex: none; font: 600 18px var(--font-display); color: var(--ink); }
-.brand i { width: 10px; height: 10px; background: var(--accent); }
+.brand img { display: block; }
 .crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 1 auto; }
 .crumbs .sep { color: var(--hairline-strong); font-size: 20px; padding: 0 4px; }
 .dd { position: relative; min-width: 0; }

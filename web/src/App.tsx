@@ -236,7 +236,7 @@ export function App() {
       <a className="skip" href="#main">Skip to the content</a>
       <header className="topbar">
         <div className="bar-1">
-          <button className="brand" onClick={goHome} title="Back to the start"><i aria-hidden />AgentTrace</button>
+          <button className="brand" onClick={goHome} title="Back to the start"><img src="/favicon.svg" alt="" width={24} height={24} />AgentTrace</button>
           <nav className="crumbs" aria-label="Where you are">
             <Menu label={scopeName} title="Choose a project">
               {(close) => (

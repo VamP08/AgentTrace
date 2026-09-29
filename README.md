@@ -1,4 +1,9 @@
-# AgentTrace
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/logo/agenttrace-lockup-dark.svg">
+    <img alt="AgentTrace" src="media/logo/agenttrace-lockup-light.svg" height="56">
+  </picture>
+</h1>
 
 [![CI](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml/badge.svg)](https://github.com/VamP08/AgentTrace/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
