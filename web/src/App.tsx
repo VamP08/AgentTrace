@@ -126,6 +126,22 @@ export function App() {
     return true;
   };
 
+  const [searchQ, setSearchQ] = useState('');
+  const openSearch = (q = '') => {
+    setSearchQ(q);
+    setSearching(true);
+    setSetup(false);
+    setRailOpen(false);
+  };
+  /** Back to the start: no session, no project, no panel. */
+  const goHome = () => {
+    setSearching(false);
+    setSetup(false);
+    setOpenProject(undefined);
+    setRailOpen(false);
+    dispatch({ type: 'select', id: '' });
+  };
+
   const select = (id: string) => {
     setOpenProject(undefined);
     setSetup(false);
@@ -213,17 +229,20 @@ export function App() {
       <aside className={`side ${railOpen ? 'open' : ''}`} aria-label="Sessions">
         <div className="brand">
           <span className="mark" aria-hidden />
-          <h1>AgentTrace</h1>
+          <h1><button className="home-link" onClick={goHome} title="Back to the start">AgentTrace</button></h1>
           <span className="sub" title={people < s.sessions.length ? `and ${s.sessions.length - people} started by programs` : undefined}>{people} sessions</span>
           <button className="btn sm quiet close" ref={railClose} onClick={() => setRailOpen(false)}>Close</button>
         </div>
         <div className="search">
+          {/* One box: typing filters the projects below, Enter searches every record. Search used to be
+              a quiet link in the footer, though it is the one tool that spans every project. */}
           <input
             type="search"
-            placeholder="Filter projects"
+            placeholder="Filter, or Enter to search the record"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Filter projects"
+            onKeyDown={(e) => e.key === 'Enter' && query.trim() && openSearch(query.trim())}
+            aria-label="Filter projects, or press Enter to search the record"
           />
         </div>
         <nav className="list">
@@ -255,7 +274,6 @@ export function App() {
           ) : (
             <span className="state"><i className="dot" style={{ color: link === 'open' ? 'var(--success)' : 'var(--danger)' }} />{link === 'open' ? 'Server connected' : 'Server offline'}</span>
           )}
-          <button className="btn sm quiet" onClick={() => { setSearching(true); setSetup(false); setRailOpen(false); }} aria-pressed={searching}>Search record</button>
           <button className="btn sm quiet" onClick={() => { setSetup(true); setSearching(false); setRailOpen(false); }}>Setup</button>
           <button className="btn sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-pressed={theme === 'light'}>
             {theme === 'dark' ? 'Light theme' : 'Dark theme'}
@@ -269,7 +287,7 @@ export function App() {
           <button className="btn quiet" onClick={() => setRailOpen(true)} aria-expanded={railOpen}>Sessions</button>
         </div>
         {searching ? (
-          <Search onOpenSession={select} onOpenRecord={openRecord} onClose={() => setSearching(false)} />
+          <Search key={searchQ} initial={searchQ} onOpenSession={select} onOpenRecord={openRecord} onClose={() => setSearching(false)} />
         ) : setup ? (
           <Setup onClose={() => setSetup(false)} />
         ) : openProject ? (
@@ -281,10 +299,7 @@ export function App() {
             <p>Set <code>CLAUDE_CONFIG_DIR</code> if your transcripts live somewhere else, then reload.</p>
           </div>
         ) : !current ? (
-          <div className="empty">
-            <h3>Choose a project.</h3>
-            A project is one GitHub repository, and its page gathers every session that wrote files into it, wherever the session was started. Open a project for the whole story, or one of its sessions for a single sitting.
-          </div>
+          <Home sessions={s.sessions} onOpenSession={select} onSearch={openSearch} />
         ) : (
           <>
             <header className="head">
@@ -364,6 +379,58 @@ function ago(iso: string): string {
   if (h < 24) return `${h} h ago`;
   const d = Math.round(h / 24);
   return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+/**
+ * The start page: what is live, what happened since the last visit, and a search box. It used to be
+ * "Choose a project." and a paragraph, which answered none of a returning reader's first questions.
+ * Sessions a program started are left out, as they are from the counts.
+ */
+function Home({ sessions, onOpenSession, onSearch }: { sessions: Session[]; onOpenSession: (id: string) => void; onSearch: (q: string) => void }) {
+  const [q, setQ] = useState('');
+  // the previous visit, read once; this visit is written for next time
+  const [since] = useState(() => {
+    try {
+      const v = localStorage.getItem('agenttrace-last-visit');
+      localStorage.setItem('agenttrace-last-visit', new Date().toISOString());
+      return v ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const mine = sessions.filter((x) => !x.automated);
+  const live = mine.filter((x) => x.live);
+  const recent = mine.filter((x) => !x.live).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, 8);
+  const fresh = since ? recent.filter((x) => x.updatedAt > since).length : 0;
+  const row = (x: Session, label: string) => (
+    <li key={x.id}>
+      <span className="kind">{label}</span>
+      <span className="t"><button className="dg-open" onClick={() => onOpenSession(x.id)}>{x.title}</button></span>
+      <span className="c">{project(x)} · {ago(x.updatedAt)}</span>
+    </li>
+  );
+  return (
+    <div className="scroll">
+      <section className="explainer" aria-label="Search the record">
+        <h3>Search the record</h3>
+        <div className="srch">
+          <input type="search" value={q} placeholder="why is chokidar here" aria-label="Search the record" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && q.trim() && onSearch(q.trim())} />
+        </div>
+        <p className="now-p small">Lessons, decisions, gaps and milestones across every project. Press Enter.</p>
+      </section>
+      {live.length > 0 && (
+        <section className="dg">
+          <h3>Live now</h3>
+          <ul className="dg-notes">{live.map((x) => row(x, 'live'))}</ul>
+        </section>
+      )}
+      <section className="dg">
+        <h3>Latest sessions{fresh > 0 ? ` · ${fresh} since your last visit` : ''}</h3>
+        {recent.length === 0 ? <p className="now-p">No sessions yet.</p> : <ul className="dg-notes">{recent.map((x) => row(x, since && x.updatedAt > since ? 'new' : 'session'))}</ul>}
+        <p className="now-p small">A project's page in the sidebar has its whole story: every session, and where its record stands.</p>
+      </section>
+    </div>
+  );
 }
 
 /** A collapsed group of sessions that belong to no repository, grouped by the folder they ran in. */

@@ -245,7 +245,7 @@ export function Learn({ base, cwd, focus }: Props) {
     stack: `Stack ${stackRows.length}`,
     decisions: `Decisions ${record.decisions.length}`,
     journal: `Journal ${record.journal.length}`,
-    docs: `Documents ${docCount}`,
+    docs: `Plan & gaps ${docCount}`,
   };
 
   return (

@@ -1,12 +1,12 @@
 // A project is one GitHub repository. Its page gathers the sessions that worked in it, from
 // wherever they were started, so a repository's story is in one place.
 import { useEffect, useState } from 'react';
-import type { ProjectDetail, ProjectDocument } from '@agenttrace/shared';
+import type { ProjectDetail, ProjectDocument, ProjectRecord } from '@agenttrace/shared';
 import { Markdown } from '../components/Markdown';
 import { Learn } from './Learn';
 import './read.css';
 
-type Tab = 'Overview' | 'Learn' | 'Documents';
+type Tab = 'Overview' | 'Learn' | 'Repo files';
 
 /** An entry of the record to open: what kind, which one, and a stamp so the same one can be asked for twice. */
 export interface RecordFocus {
@@ -26,6 +26,8 @@ interface Props {
 export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
   const [p, setP] = useState<ProjectDetail | null | undefined>();
   const [tab, setTab] = useState<Tab>('Overview');
+  // an entry opened from this page's own summary; the newer of this and `focus` wins
+  const [local, setLocal] = useState<RecordFocus>();
 
   useEffect(() => {
     setP(undefined);
@@ -63,7 +65,7 @@ export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
         </div>
         <div className="row2">
           <div className="seg" role="tablist">
-            {(['Overview', 'Learn', 'Documents'] as Tab[]).map((t) => (
+            {(['Overview', 'Learn', 'Repo files'] as Tab[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t}</button>
             ))}
           </div>
@@ -71,10 +73,20 @@ export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
       </header>
 
       <div className="stage">
-        {tab === 'Learn' && <Learn base={`/api/projects/${encodeURIComponent(p.id)}/record`} cwd={p.root} focus={focus} />}
-        {tab === 'Documents' && <Documents id={p.id} />}
+        {tab === 'Learn' && <Learn base={`/api/projects/${encodeURIComponent(p.id)}/record`} cwd={p.root} focus={local && (!focus || local.n > focus.n) ? local : focus} />}
+        {tab === 'Repo files' && <Documents id={p.id} />}
         {tab === 'Overview' && (
         <div className="scroll rd-regions">
+          {p.recordRoot && !p.recordMissing && (
+            <RecordSummary
+              base={`/api/projects/${encodeURIComponent(p.id)}/record`}
+              root={p.recordRoot}
+              onOpen={(kind, entry) => {
+                setLocal({ kind, id: entry, n: Date.now() });
+                setTab('Learn');
+              }}
+            />
+          )}
           <section className="rd-region">
             <h3 className="rd-region-h">What this project is</h3>
             <p>
@@ -131,13 +143,7 @@ export function Project({ id, focus, onOpenSession, onOpenProject }: Props) {
               <h3 className="rd-region-h">Record folder missing</h3>
               <p>The record for this repository is named at <code>{p.recordRoot}</code>, but that folder is not on disk. Put it back, or point <code>agenttrace.json</code> at its new place and run <code>node ~/.claude/skills/agenttrace/register.mjs</code> in the repository.</p>
             </section>
-          ) : p.recordRoot ? (
-            <section className="rd-region">
-              <h3 className="rd-region-h">Record</h3>
-              <p>Lessons for this repository are kept in <code>{p.recordRoot}</code>.</p>
-              <div className="rd-row"><button className="btn primary" onClick={() => setTab('Learn')}>Open the lessons</button></div>
-            </section>
-          ) : (
+          ) : p.recordRoot ? null : (
             <section className="rd-region">
               <h3 className="rd-region-h">No record yet</h3>
               <p>This repository keeps no lessons. Open a coding session inside it and run <code>/agenttrace backfill</code>. The skill asks where the record should live, fetches this repository's history from AgentTrace while it is running, and writes the record from what happened: stack, milestones, one journal entry per session, and a lesson for each technology. From then on every session adds to it as it builds.</p>
@@ -156,6 +162,68 @@ const GROUPS = [
 ];
 
 /** The documents the project already keeps, shown as they are on disk. Nothing here writes. */
+/**
+ * Where the project stands, from its record, at the top of its page: the milestones in progress and
+ * the next one with its gate, the open gaps by severity, the latest decisions and the latest session.
+ * The record is the part of the app nothing else offers, and it used to be a path and a button at the
+ * bottom of the Overview, under the counts and the session list.
+ */
+function RecordSummary({ base, root, onOpen }: { base: string; root: string; onOpen: (kind: string, id: string) => void }) {
+  const [r, setR] = useState<ProjectRecord | null>();
+  useEffect(() => {
+    fetch(base)
+      .then((x) => (x.ok ? x.json() : null))
+      .then((x) => setR(x && x.present !== false ? x : null))
+      .catch(() => setR(null));
+  }, [base]);
+  if (r === undefined) return <section className="rd-region"><h3 className="rd-region-h">Where it stands</h3><p className="rd-c">Reading the record…</p></section>;
+  if (r === null) return null;
+
+  const ms = r.roadmap?.data?.milestones ?? [];
+  const active = ms.filter((m) => m.status === 'in-progress');
+  // a milestone the owner parked is not "next", however early it sits in the file
+  const next = ms.find((m) => m.status === 'planned' && !(m as { deferred?: string }).deferred);
+  const short = (s?: string) => (s && s.length > 110 ? `${s.slice(0, 109)}…` : s);
+  const done = ms.filter((m) => m.status === 'done').length;
+  const rank: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const open = (r.gaps?.data?.gaps ?? []).filter((g) => g.status === 'open').sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3));
+  const bySeverity = ['high', 'medium', 'low'].map((s) => [s, open.filter((g) => g.severity === s).length] as const).filter(([, n]) => n > 0);
+  const row = (kind: string, id: string, label: string, title: string, note?: string) => (
+    <li key={`${kind}:${id}`}>
+      <span className="kind">{label}</span>
+      <span className="t"><button className="dg-open" onClick={() => onOpen(kind, id)}>{title}</button></span>
+      {note && <span className="c">{note}</span>}
+    </li>
+  );
+
+  return (
+    <section className="rd-region">
+      <h3 className="rd-region-h">Where it stands</h3>
+      {ms.length > 0 && (
+        <>
+          <p className="rd-c">{done} of {ms.length} milestones done.</p>
+          <ul className="dg-notes">
+            {active.map((m) => row('milestone', m.id, 'in progress', `${m.id} · ${m.title}`, short(m.gate)))}
+            {next && row('milestone', next.id, 'next', `${next.id} · ${next.title}`, short(next.gate))}
+          </ul>
+        </>
+      )}
+      <p className="rd-c">
+        {open.length === 0 ? 'No open gaps.' : `${open.length} open gap${open.length === 1 ? '' : 's'}: ${bySeverity.map(([s, n]) => `${n} ${s}`).join(', ')}.`}
+      </p>
+      {open.length > 0 && <ul className="dg-notes">{open.slice(0, 3).map((g) => row('gap', g.id, g.severity, `${g.id} · ${g.title}`))}</ul>}
+      {r.decisions.length > 0 && (
+        <>
+          <p className="rd-c">Latest decisions</p>
+          <ul className="dg-notes">{r.decisions.slice(0, 3).map((d) => row('decision', d.slug, 'decision', d.title, d.date.slice(0, 10)))}</ul>
+        </>
+      )}
+      {r.journal[0] && <ul className="dg-notes">{row('journal', r.journal[0].slug, 'last session', r.journal[0].summary || r.journal[0].slug, r.journal[0].date)}</ul>}
+      <p className="rd-c">Kept in <code>{root}</code>. Every lesson, decision and document is under Learn.</p>
+    </section>
+  );
+}
+
 function Documents({ id }: { id: string }) {
   const base = `/api/projects/${encodeURIComponent(id)}/documents`;
   const [list, setList] = useState<ProjectDocument[] | null | undefined>();

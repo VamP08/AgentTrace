@@ -11,6 +11,8 @@ interface Props {
   /** open an entry of a record where it lives; false when no project owns it */
   onOpenRecord: (project: string, kind: string, id: string) => boolean;
   onClose: () => void;
+  /** a query typed elsewhere — the rail, the start page — to run on opening */
+  initial?: string;
 }
 
 const KIND_SAYS: Record<Hit['kind'], string> = {
@@ -26,8 +28,8 @@ const KIND_SAYS: Record<Hit['kind'], string> = {
 /** A file or a commit is not a page in this app, so following one searches for it instead. */
 const searched = (l: Link) => l.kind === 'file' || l.kind === 'commit';
 
-export function Search({ onOpenSession, onOpenRecord, onClose }: Props) {
-  const [q, setQ] = useState('');
+export function Search({ onOpenSession, onOpenRecord, onClose, initial }: Props) {
+  const [q, setQ] = useState(initial ?? '');
   const [result, setResult] = useState<SearchResult>();
   const [failed, setFailed] = useState(false);
   // A search in flight says so. The first one after a record changes rebuilds the index, and an
