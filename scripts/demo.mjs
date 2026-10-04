@@ -13,9 +13,9 @@
 // is never read.
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from './demo/lectureqa.mjs';
 
@@ -298,6 +298,14 @@ async function replay() {
   mkdirSync(dirname(transcript), { recursive: true });
   mkdirSync(dirname(hooks), { recursive: true });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // a helper's transcript was written at build time, with the session's old times; it is re-timed
+  // when its Agent call plays in, on the same quarter-speed clock
+  const subagents = join(dirname(transcript), basename(transcript, '.jsonl'), 'subagents');
+  const helperFile = new Map();
+  if (existsSync(subagents))
+    for (const f of readdirSync(subagents).filter((f) => f.endsWith('.meta.json')))
+      helperFile.set(JSON.parse(readFileSync(join(subagents, f), 'utf8')).toolUseId, join(subagents, f.replace('.meta.json', '.jsonl')));
+  const started = new Map(); // tool use id to when its call was written, for the durations the hooks report
   let last = NaN;
   let h = 0;
   for (const rec of lines) {
@@ -310,7 +318,19 @@ async function replay() {
       rec.snapshot.timestamp = now;
       for (const b of Object.values(rec.snapshot.trackedFileBackups)) b.backupTime = now;
     }
-    for (; h < events.length && Date.parse(events[h].received_at) <= last; h++) appendFileSync(hooks, JSON.stringify({ ...events[h], received_at: now }) + '\n');
+    for (const b of Array.isArray(rec.message?.content) ? rec.message.content : []) {
+      if (b.type !== 'tool_use') continue;
+      started.set(b.id, Date.now());
+      const file = helperFile.get(b.id);
+      if (!file) continue;
+      const sub = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      writeFileSync(file, sub.map((r) => JSON.stringify({ ...r, timestamp: new Date(Date.now() + (Date.parse(r.timestamp) - t) / 4).toISOString() })).join('\n') + '\n');
+    }
+    for (; h < events.length && Date.parse(events[h].received_at) <= last; h++) {
+      const e = { ...events[h], received_at: now };
+      if (e.duration_ms !== undefined && started.has(e.tool_use_id)) e.duration_ms = Date.now() - started.get(e.tool_use_id);
+      appendFileSync(hooks, JSON.stringify(e) + '\n');
+    }
     appendFileSync(transcript, JSON.stringify(rec) + '\n');
   }
   for (; h < events.length; h++) appendFileSync(hooks, JSON.stringify({ ...events[h], received_at: new Date().toISOString() }) + '\n');
