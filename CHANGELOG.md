@@ -9,6 +9,8 @@
 - A running turn stays "Working" between a tool's result and the model's next step.
 - A session's elapsed time and its last turn's duration are right when a technology was detected.
 - A compaction after a `/compact` turn is marked.
+- The record's archive copy and the search index notice a file renamed or swapped for one of the
+  same size; before, the old copy could be kept.
 - Demo: an eleventh session (OCR for scanned slides and figures), and `--live`, which plays it in
   line by line so live mode can be seen.
 
