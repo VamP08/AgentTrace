@@ -117,7 +117,7 @@ and streams it to the page over a WebSocket. Nothing is stored except an archive
 
 ## Run it
 
-Requires Node 20 or later, and git for the demo.
+Requires Node 20.19 or later, and git for the demo.
 
 ```
 npx @vamp08/agenttrace          # your own Claude Code sessions, from ~/.claude

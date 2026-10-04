@@ -48,7 +48,8 @@ function loadMermaid() {
   if (!mermaidReady) {
     mermaidReady = import('mermaid').then((m) => {
       const dark = document.documentElement.dataset.theme !== 'light';
-      m.default.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'strict', fontFamily: "'Archivo Variable', system-ui, sans-serif" });
+      // classic look: mermaid 12's default draws drop shadows on every node
+      m.default.initialize({ startOnLoad: false, look: 'classic', theme: dark ? 'dark' : 'neutral', securityLevel: 'strict', fontFamily: "'Archivo Variable', system-ui, sans-serif" });
       return m.default;
     });
   }

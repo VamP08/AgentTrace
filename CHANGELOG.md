@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 — 2026-10-04
+
+- Requires Node 20.19 or later (chokidar 5).
+- React 19, mermaid 12, chokidar 5, and patch updates to ws, tsx and @tanstack/react-virtual.
+  Diagrams keep their flat look: mermaid 12 draws drop shadows by default.
+- No known vulnerabilities in what the package ships (DOMPurify 3.4.16, via mermaid).
+- The skill's example paths are placeholders rather than a real machine's folders, and its
+  byte-offset exercise splits on `'\n'` again; the line break had been written into the string.
+
 ## 0.1.2 — 2026-10-04
 
 - Context shows a curve of what the model read after every reply, with turns as regions and each

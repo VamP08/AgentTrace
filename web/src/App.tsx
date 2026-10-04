@@ -52,9 +52,9 @@ export function App() {
   // Three states, not two: before the first open nothing is wrong yet, and saying "offline" then
   // is a lie the reader has no way to check.
   const [link, setLink] = useState<'connecting' | 'open' | 'offline'>('connecting');
-  const socket = useRef<ReturnType<typeof openSocket>>();
+  const socket = useRef<ReturnType<typeof openSocket>>(undefined);
   // when the socket drops, the figures on screen are whatever arrived at this moment
-  const lastSeen = useRef<Date>();
+  const lastSeen = useRef<Date>(undefined);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
