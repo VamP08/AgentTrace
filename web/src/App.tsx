@@ -86,13 +86,15 @@ export function App() {
     };
   }, []);
 
-  // The project index is built from every transcript, so it is fetched once and on a slow timer.
+  // The project index is built from every transcript, so it is fetched on a slow timer, and again
+  // when a session appears: a session started after the page loaded belongs to no project until the
+  // index has seen it, and showed as "No repository" for up to a minute.
   useEffect(() => {
     const load = () => fetch('/api/projects').then((r) => (r.ok ? r.json() : { projects: [], misc: [] })).then(setIndex).catch(() => {});
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
-  }, []);
+  }, [s.sessions.length]);
 
   // Which project owns each record, as record name to record folder. A search hit or a digest note
   // names its record ("HRMS"); the project list knows each project's record folder. Matching the two

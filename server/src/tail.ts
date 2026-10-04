@@ -88,6 +88,7 @@ export class Tailer extends EventEmitter {
     // A file created after the initial scan is new content: read from zero. Pre-existing: skip to the end.
     const fresh = this.scanned;
     this.files.set(file, { offset: fresh ? 0 : size, partial: '' });
+    if (fresh && !who.agentId) this.emit('added', who satisfies TailGone); // a session started since the scan
     if (fresh) this.onChange(file);
   }
 

@@ -489,6 +489,12 @@ export function attachWebSocket(server: ReturnType<typeof createServer>, tailer:
     const events = seen && !b.agentId ? [...b.events, ...detectStack(b.events, seen)] : b.events;
     for (const [ws, sid] of wants) if (sid === b.sessionId) send(ws, { type: 'events', sessionId: b.sessionId, agentId: b.agentId, events });
   });
+  // A new session is announced to every open page at once. The page also asks every 15 s, which
+  // left a session that had just started off the start page for up to that long.
+  tailer.on('added', () => {
+    const sessions = discoverSessions(claudeRoot);
+    for (const ws of wss.clients) send(ws, { type: 'sessions', sessions });
+  });
   tailer.on('gone', (g: TailGone) => {
     for (const [ws, sid] of wants) if (sid === g.sessionId && !g.agentId) send(ws, { type: 'sessions', sessions: discoverSessions(claudeRoot) });
   });

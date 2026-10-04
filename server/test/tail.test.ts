@@ -92,8 +92,10 @@ describe('Tailer', () => {
     for (let i = 0; i < 20; i++) writeFileSync(join(dir, `${SID.slice(0, -2)}${String(i).padStart(2, '0')}.jsonl`), rec(`old${i}`, 'already there') + '\n');
 
     const batches: TailBatch[] = [];
+    const added: string[] = [];
     tailer = new Tailer(join(root, 'projects')).start();
     tailer.on('events', (b: TailBatch) => batches.push(b));
+    tailer.on('added', (w: { sessionId: string }) => added.push(w.sessionId));
     const until = Date.now() + 2000;
     while (Date.now() < until) {
       // hold the event loop past any fixed window, so the scan's reports all arrive late
@@ -101,10 +103,12 @@ describe('Tailer', () => {
     await tailer.ready;
     await new Promise((r) => setTimeout(r, 300));
     expect(batches).toEqual([]);
+    expect(added).toEqual([]); // nothing that was already there is announced as new
 
-    // and a file that does arrive after the scan still streams from its first byte
+    // and a file that does arrive after the scan still streams from its first byte, and is announced
     writeFileSync(join(dir, `${SID.slice(0, -2)}99.jsonl`), rec('fresh', 'new session') + '\n');
     await waitFor(() => batches.find((b) => b.events.some((e) => e.id === 'fresh')));
+    expect(added).toEqual([`${SID.slice(0, -2)}99`]);
     rmSync(root, { recursive: true, force: true });
   }, 15000);
 });

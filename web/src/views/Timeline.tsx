@@ -22,6 +22,8 @@ interface Turn {
   /** the last tool call, and whether it has a result yet */
   lastCall?: ToolCallEvent;
   lastCallDone: boolean;
+  /** a tool result is the newest thing in the turn, so the model has not replied to it yet */
+  awaitingModel?: boolean;
   lastModelText?: string;
 }
 
@@ -55,6 +57,7 @@ export function buildTurns(events: Event[]): Turn[] {
   let cur: Turn | undefined;
   for (const e of events) {
     if (e.kind === 'user') {
+      if (cur) cur.awaitingModel = false; // a new prompt means the turn before it ended
       cur = { n: turns.length + 1, prompt: e.text, images: e.images, startTs: e.ts, endTs: e.ts, events: [], calls: 0, failed: 0, files: new Set(), lastCallDone: true };
       turns.push(cur);
       continue;
@@ -72,12 +75,16 @@ export function buildTurns(events: Event[]): Turn[] {
       cur.lastCallDone = !!r;
     }
     if (e.kind === 'assistant_text') cur.lastModelText = e.text;
+    if (e.kind === 'tool_result') cur.awaitingModel = true;
+    if (e.kind === 'tool_call' || e.kind === 'assistant_text') cur.awaitingModel = false;
   }
   return turns;
 }
 
 export function turnState(t: Turn, live: boolean): string {
   if (t.lastCall && !t.lastCallDone) return WAIT_TOOLS.has(t.lastCall.name) ? 'Waiting for you' : live ? 'Working' : 'Cut off';
+  // between a tool's result and the model's next line the turn is still going, not answered
+  if (live && t.awaitingModel) return 'Working';
   return 'Answered';
 }
 
