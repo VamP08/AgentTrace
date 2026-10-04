@@ -427,15 +427,53 @@ pre.diff .del { color: var(--ink-3); text-decoration: line-through; text-decorat
 .ctx-line:hover { background: var(--hover); }
 .ctx-line .n { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
 .ctx-line .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ctx-line .c { color: var(--ink-3); font-size: 12px; text-align: right; }
-.bar { position: relative; height: 18px; background: var(--raised); border-radius: var(--r-s); overflow: hidden; }
-.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); }
+.ctx-line .c { color: var(--ink-3); font-size: 12px; text-align: right; font-family: var(--font-mono); }
+.ctx-line .n .chev { margin-right: 8px; }
+.ctx-line .cut { font-size: 13px; color: var(--ink); white-space: nowrap; }
+.ctx-line .cut i { font-style: normal; margin-left: 6px; font-size: 12px; color: var(--ink-3); }
+.ctx-hooks { max-width: 1160px; margin: 0 auto; padding: 8px 24px 48px; }
+.ctx-hooks h3 { font: 600 16px var(--font-display); color: var(--ink); margin-bottom: 8px; }
+.ctx-hooks p { font-size: 13px; color: var(--ink-3); line-height: 1.7; }
+/* data marks: square, grey; only the turn in hand is violet, the same signal as the curve above */
+.bar { position: relative; height: 18px; background: var(--raised); overflow: hidden; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--ink-3) 26%, transparent); }
+.ctx-row.lit .bar:not(.out) i { background: var(--accent-soft); }
 /* written is a quantity, not a landed result: --success is reserved for those and for added lines */
 .bar.out i { background: var(--hover); background: color-mix(in srgb, var(--ink-3) 26%, transparent); }
 .bar b { position: absolute; right: 8px; top: 0; line-height: 18px; font-size: 12px; font-weight: 500; font-family: var(--font-mono); }
 /* where the context shrank, the mark sits at the previous turn's width and carries the word */
 .bar u { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--hairline-strong); }
 .bar em { position: absolute; left: 6px; top: 0; line-height: 18px; font-size: 12px; font-style: normal; color: var(--ink-2); }
+.ctx-row.lit .ctx-line { background: var(--hover); }
+
+/* The curve: grey by default, the turn in hand in the accent. Labels are HTML over the SVG, so the
+   plot can stretch to any width without stretching its text. */
+.ctx-curve { margin: 12px 0 36px; padding: 0 24px; }
+.ctx-read { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px 12px; min-height: 24px; margin-bottom: 14px; font-size: 14px; color: var(--ink-2); }
+.ctx-read b { flex: none; font: 600 16px var(--font-display); color: var(--ink); white-space: nowrap; }
+.ctx-read .p { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-read .mono { flex: none; margin-left: auto; white-space: nowrap; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ctx-curve .plot { position: relative; height: 260px; margin: 0 0 34px 48px; border-bottom: 1px solid var(--hairline-strong); }
+.ctx-curve svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ctx-curve .area { fill: var(--raised); }
+.ctx-curve .line { fill: none; stroke: var(--ink-3); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ctx-curve .on .area { fill: var(--accent-soft); }
+.ctx-curve .on .line { stroke: var(--accent-text); stroke-width: 2; }
+.ctx-curve .grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--hairline); pointer-events: none; }
+.ctx-curve .grid.base { border-top: 0; }
+.ctx-curve .grid i, .ctx-curve .hit i, .ctx-curve .mark i, .ctx-curve .axis { font-style: normal; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ctx-curve .grid i { position: absolute; right: calc(100% + 10px); top: -9px; }
+.ctx-curve .cut { position: absolute; z-index: 1; transform: translate(6px, calc(-100% - 10px)); padding: 0 6px; background: var(--ground); white-space: nowrap; font-size: 13px; color: var(--ink); pointer-events: none; }
+.ctx-curve .cut.left { transform: translate(calc(-100% - 6px), calc(-100% - 10px)); }
+.ctx-curve .cut i { font-style: normal; margin-left: 6px; font-size: 12px; color: var(--ink-3); }
+.ctx-curve .hit { position: absolute; top: 0; bottom: -34px; border-left: 1px solid var(--hairline); cursor: pointer; }
+.ctx-curve .hit:first-of-type { border-left: 0; }
+.ctx-curve .hit i { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; }
+.ctx-curve .hit.on i, .ctx-curve .hit.open i, .ctx-curve .mark.open i { color: var(--accent-text); font-weight: 600; }
+.ctx-curve .mark { position: absolute; bottom: -34px; width: 0; height: 34px; }
+.ctx-curve .mark i { position: absolute; left: -10px; width: 20px; bottom: 8px; text-align: center; }
+.ctx-curve .axis { position: absolute; right: calc(100% + 10px); bottom: -26px; font-size: 12px; }
+
 .ctx-detail { padding: 8px 12px 14px 56px; border-top: 1px solid var(--hairline); background: var(--surface); }
 .ctx-item { margin-top: 8px; border: 1px solid var(--hairline); border-radius: var(--r); }
 .ctx-item summary { padding: 6px 10px; cursor: pointer; color: var(--ink-2); }
@@ -585,6 +623,14 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
   .ctx-table { padding: 0 8px 40px; }
   .ctx-head, .ctx-line { grid-template-columns: 28px minmax(0, 1fr) 110px 90px; }
   .ctx-head span:last-child, .ctx-line .c { display: none; }
+  .ctx-line .bar em { display: none; } /* too narrow for the word and the number; the curve names it */
+  .ctx-head, .ctx-line { grid-template-columns: 40px 1fr 1fr; row-gap: 6px; }
+  .ctx-head span:first-child { grid-column: 1; }
+  .ctx-line .p { grid-column: 2 / 4; }
+  .ctx-line .bar:not(.out), .ctx-line .cut { grid-column: 2; grid-row: 2; }
+  .ctx-line .bar.out, .ctx-line .cut + span { grid-column: 3; grid-row: 2; }
+  .ctx-read { flex-wrap: wrap; min-height: 48px; }
+  .ctx-read .mono { margin-left: 0; flex-basis: 100%; }
   .ctx-line { min-height: 44px; }
   .node, .ver { min-height: 44px; }
   .ver { height: 44px; }
@@ -697,7 +743,7 @@ pre.code.numbered .ln:last-child { padding-bottom: 8px; }
 
 /* pages that were anchored left at 1920 are centred like the rest */
 .rd-regions > .rd-region { margin-left: auto; margin-right: auto; }
-.ctx-page > .explainer, .ctx-page > .ctx-table { max-width: 1160px; margin-left: auto; margin-right: auto; }
+.ctx-page > .explainer, .ctx-page > .ctx-table, .ctx-page > .ctx-curve { max-width: 1160px; margin-left: auto; margin-right: auto; }
 .ctx-page > .explainer { max-width: 1160px; }
 .ctx-page > .explainer p { max-width: 68ch; }
 .rd-regions .rd-sub { display: flex; gap: 12px; align-items: baseline; margin: 24px 0 6px; font: 600 18px var(--font-display); color: var(--ink); }
