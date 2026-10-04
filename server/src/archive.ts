@@ -4,6 +4,7 @@
 // The same folder keeps each repository's default-branch log, so commits survive a deleted
 // working copy the way sessions survive the tool's cleanup.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Session } from '@agenttrace/shared';
@@ -146,8 +147,8 @@ export function recordArchivePath(claudeRoot: string, project: string): string {
  *
  * Markdown stays the source of truth — this is a copy, never read in preference to the original,
  * and the original is restored from git or from here by a person, never silently by the app.
- * Copies only when something changed, compared by newest modification time and total size, so an
- * unchanged record costs one stat per file.
+ * Copies only when something changed, compared by every file's name, size and modification time,
+ * so an unchanged record costs one stat per file.
  */
 export function archiveRecord(claudeRoot: string, project: string, recordRoot: string): boolean {
   if (!project || !recordRoot || !existsSync(recordRoot)) return false;
@@ -157,8 +158,8 @@ export function archiveRecord(claudeRoot: string, project: string, recordRoot: s
   const stampFile = join(dest, '.measure.json');
   if (existsSync(stampFile)) {
     try {
-      const was = JSON.parse(readFileSync(stampFile, 'utf8')) as { files: number; bytes: number; newest: number };
-      if (was.files === now.files && was.bytes === now.bytes && was.newest === now.newest) return false;
+      const was = JSON.parse(readFileSync(stampFile, 'utf8')) as { sig?: string };
+      if (was.sig === now.sig) return false;
     } catch {
       // an unreadable stamp just means copying again
     }
@@ -170,11 +171,15 @@ export function archiveRecord(claudeRoot: string, project: string, recordRoot: s
   return true;
 }
 
-/** Files, total bytes and newest mtime under a folder: enough to tell a changed record from an unchanged one. */
-export function measure(root: string): { files: number; bytes: number; newest: number } {
+/**
+ * Files, total bytes and newest mtime under a folder, and a signature of every file's path, size and
+ * mtime. The totals alone miss a file swapped for another of the same size within one mtime tick.
+ */
+export function measure(root: string): { files: number; bytes: number; newest: number; sig: string } {
   let files = 0;
   let bytes = 0;
   let newest = 0;
+  const lines: string[] = [];
   const walk = (dir: string) => {
     let names: string[];
     try {
@@ -196,11 +201,13 @@ export function measure(root: string): { files: number; bytes: number; newest: n
         files += 1;
         bytes += s.size;
         newest = Math.max(newest, Math.floor(s.mtimeMs));
+        lines.push(`${full.slice(root.length)} ${s.size} ${s.mtimeMs}`);
       }
     }
   };
   walk(root);
-  return { files, bytes, newest };
+  const sig = createHash('sha1').update(lines.sort().join('\n')).digest('hex');
+  return { files, bytes, newest, sig };
 }
 
 /** Every file in the archive, with the folder it sits in and its size. */

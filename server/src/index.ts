@@ -111,7 +111,7 @@ function stampOf(paths: string[]): string {
   return paths
     .map((p) => {
       const m = measure(p);
-      return `${p}:${m.files}:${m.bytes}:${m.newest}`;
+      return `${p}:${m.sig}`;
     })
     .join('|');
 }

@@ -3,7 +3,7 @@
 // changes, costs nothing when it has not, and — the case that matters — never lets an empty or
 // vanished record overwrite a good copy.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { archiveRecord, recordArchivePath } from '../src/archive.js';
@@ -44,8 +44,11 @@ describe('archiveRecord', () => {
 
   it('drops a file from the copy once it is gone from the record', () => {
     archiveRecord(claudeRoot, 'P', recordRoot);
+    const was = statSync(join(recordRoot, 'learning', 'a.md')).mtime;
     rmSync(join(recordRoot, 'learning', 'a.md'));
     writeFileSync(join(recordRoot, 'learning', 'c.md'), '---\ntitle: C\n---\nbody\n');
+    // same size and same mtime: only the name changed, which totals alone cannot see
+    utimesSync(join(recordRoot, 'learning', 'c.md'), was, was);
     archiveRecord(claudeRoot, 'P', recordRoot);
     expect(existsSync(join(dest(), 'learning', 'a.md'))).toBe(false);
     expect(existsSync(join(dest(), 'learning', 'c.md'))).toBe(true);
