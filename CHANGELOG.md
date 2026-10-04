@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 — 2026-10-04
+
+- New logo: three versions of a file stacked, the newest showing its diff. The header mark, favicon
+  (with an `.ico` for browsers without SVG icons), touch icon, link preview, README lockup and
+  screenshots all carry it.
+
 ## 0.1.3 — 2026-10-04
 
 - Requires Node 20.19 or later (chokidar 5).
