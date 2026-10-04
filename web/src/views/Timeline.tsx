@@ -64,7 +64,9 @@ export function buildTurns(events: Event[]): Turn[] {
     }
     if (!cur) continue; // context that arrives before the first prompt belongs to no turn
     cur.events.push(e);
-    if (e.ts) cur.endTs = e.ts;
+    // the latest time seen, not the last event's: detected technologies are appended after the
+    // events, carrying the earlier time of the line that showed them
+    if (e.ts && e.ts > cur.endTs) cur.endTs = e.ts;
     if (e.kind === 'tool_call') {
       cur.calls++;
       const r = results.get(e.toolUseId);
