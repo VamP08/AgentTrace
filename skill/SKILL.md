@@ -17,7 +17,7 @@ why it is here, say what it replaced. Then, and only then, the mechanism.
 The project's record root is named in `agenttrace.json` at the root of the project repo:
 
 ```json
-{ "contract": 1, "project": "AgentTrace", "record": "e:/Work/Live/code/Project/docs/AgentTrace" }
+{ "contract": 1, "project": "AgentTrace", "record": "/home/you/notes/agenttrace-record/AgentTrace" }
 ```
 
 **If `agenttrace.json` is missing, stop and ask the owner for a path. This is a hard stop, not a
@@ -49,8 +49,8 @@ Then, before writing anything to the answer:
 {
   "contract": 1,
   "project": "HRMS",
-  "record": "e:/Work/Live/code/Project/docs/agenttrace-record/HRMS",
-  "library": "e:/Work/Live/code/Project/docs/agenttrace-record/library",
+  "record": "/home/you/notes/agenttrace-record/HRMS",
+  "library": "/home/you/notes/agenttrace-record/library",
   "chosen_by": "owner",
   "chosen_at": "2026-09-11"
 }
@@ -209,8 +209,7 @@ exercise:
       const buf = Buffer.alloc(size - offset);
       const fd = fs.openSync(file, 'r'); fs.readSync(fd, buf, 0, buf.length, offset); fs.closeSync(fd);
       offset = size;
-      const lines = (partial + buf.toString()).split('
-');
+      const lines = (partial + buf.toString()).split('\n');
       partial = lines.pop() ?? '';
       lines.forEach((l) => console.log(l));
     }, 200);
