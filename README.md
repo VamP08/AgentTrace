@@ -135,7 +135,8 @@ npm run demo       # or the LectureQA demo, if you want to look first
 `AGENTTRACE_PORT` moves it off 4747. `npm run demo` builds the demo under your temp folder, a
 real git repository included, and opens the app on port 4750 with `CLAUDE_CONFIG_DIR` pointed at
 it, so your own sessions are never read. It is written by `scripts/demo.mjs`, in the coding
-tool's own file formats.
+tool's own file formats. Add `--live` (`npx @vamp08/agenttrace --demo --live`) and its last
+session plays in line by line over about two minutes, so you can watch a session as it runs.
 
 For development:
 

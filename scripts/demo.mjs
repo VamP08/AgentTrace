@@ -3,6 +3,7 @@
 //
 //   npm run demo                              build it under the system temp folder and open the app
 //   node scripts/demo.mjs <dir> --no-start    build it only
+//   npm run demo -- --live                    and play the last session in as it happens, to see live mode
 //
 // The project is LectureQA, a student's app that answers questions from their lecture PDFs and cites
 // the page, built over seven sessions across two weeks (scripts/demo/lectureqa.mjs). Everything the
@@ -12,7 +13,7 @@
 // is never read.
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const root = resolve(args.find((a) => !a.startsWith('--')) ?? join(tmpdir(), 'agenttrace-demo'));
 const start = !args.includes('--no-start');
+const live = args.includes('--live');
 
 rmSync(root, { recursive: true, force: true });
 const claude = join(root, 'claude');
@@ -108,6 +110,7 @@ class Transcript {
     this.lines.push({ ...this.base('assistant', 5), message: { id: `msg_${randomUUID().slice(0, 12)}`, role: 'assistant', model: 'demo', content: [{ type: 'tool_use', id, name, input }], usage: this.usage(140) } });
     this.hook('PreToolUse', { tool_name: name, tool_use_id: id });
     this.lines.push({ ...this.base('user', seconds), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result, is_error: error }] } });
+    this.context += Math.round(String(result).length / 4); // the model reads every result on its next reply
     // a little under the gap to the next line: the tool finished just before its result was written
     this.hook(error ? 'PostToolUseFailure' : 'PostToolUse', { tool_name: name, tool_use_id: id, duration_ms: Math.max(40, Math.round(seconds * 1000 * 0.93)) });
     return id;
@@ -223,24 +226,47 @@ class Transcript {
     writeFileSync(join(dir, `agent-${agentId}.jsonl`), sub.lines.map((l) => JSON.stringify({ ...l, isSidechain: true, agentId })).join('\n') + '\n');
     writeFileSync(join(dir, `agent-${agentId}.meta.json`), JSON.stringify({ agentType: type, description, toolUseId: toolId, spawnDepth: 1 }));
   }
+  /** The person runs /compact: the conversation so far is swapped for a summary, and the context drops. */
+  compact(summary, kept = 21_000) {
+    this.lines.push({ ...this.base('user', 40), message: { role: 'user', content: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>' } });
+    this.hook('PreCompact', { trigger: 'manual' });
+    this.lines.push({ ...this.base('system', 35), subtype: 'compact_boundary', content: 'Conversation compacted', level: 'info', compactMetadata: { trigger: 'manual', preTokens: this.context } });
+    this.lines.push({ ...this.base('user', 1), isCompactSummary: true, message: { role: 'user', content: `This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n${summary}` } });
+    this.context = kept;
+  }
   /** A turn ends: back up what it changed. */
   done(text, out) {
     this.say(text, out);
     this.snapshot();
     this.hook('Stop');
   }
-  save() {
+  /**
+   * Writes the transcript and its hook log where the app looks for them. A live session is held
+   * back instead, under <demo>/live, and replay() writes it line by line, so it is still running.
+   */
+  save({ live = false } = {}) {
     this.snapshot();
-    this.lines.push({ type: 'ai-title', sessionId: this.id, aiTitle: this.title });
-    const dir = join(claude, 'projects', slugOf(this.cwd));
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, `${this.id}.jsonl`);
-    writeFileSync(file, this.lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const title = { type: 'ai-title', sessionId: this.id, aiTitle: this.title };
+    if (live) this.lines.splice(1, 0, title);
+    else this.lines.push(title);
+    const file = join(claude, 'projects', slugOf(this.cwd), `${this.id}.jsonl`);
+    const hooks = join(claude, 'agenttrace', 'hooks', `${this.id}.jsonl`);
+    const all = [{ hook_event_name: 'SessionStart', received_at: new Date(this.start).toISOString(), session_id: this.id, source: 'startup' }, ...this.hooks];
+    if (!live) all.push({ hook_event_name: 'SessionEnd', received_at: new Date(this.t + 2000).toISOString(), session_id: this.id });
+    const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+    if (live) {
+      const held = join(root, 'live');
+      mkdirSync(held, { recursive: true });
+      writeFileSync(join(held, 'session.jsonl'), jsonl(this.lines));
+      writeFileSync(join(held, 'hooks.jsonl'), jsonl(all));
+      writeFileSync(join(held, 'target.json'), JSON.stringify({ transcript: file, hooks }));
+      return this;
+    }
+    mkdirSync(dirname(file), { recursive: true });
+    mkdirSync(dirname(hooks), { recursive: true });
+    writeFileSync(file, jsonl(this.lines));
     utimesSync(file, new Date(this.t), new Date(this.t));
-    const hooks = join(claude, 'agenttrace', 'hooks');
-    mkdirSync(hooks, { recursive: true });
-    const all = [{ hook_event_name: 'SessionStart', received_at: new Date(this.start).toISOString(), session_id: this.id, source: 'startup' }, ...this.hooks, { hook_event_name: 'SessionEnd', received_at: new Date(this.t + 2000).toISOString(), session_id: this.id }];
-    writeFileSync(join(hooks, `${this.id}.jsonl`), all.map((h) => JSON.stringify(h)).join('\n') + '\n');
+    writeFileSync(hooks, jsonl(all));
     return this;
   }
 }
@@ -258,7 +284,39 @@ function md(rel, front, body) {
   writeFileSync(full, `---\n${front.trim()}\n---\n${body.trim()}\n`);
 }
 
-const summary = build({ Transcript, at, md, put, repo, record, join, root });
+/**
+ * Plays the held-back session into the app's folders the way the coding tool writes it: one line at
+ * a time, stamped with the time it is written. Gaps are the recorded ones, a quarter as long and
+ * between 0.4 and 3 seconds, so the session stays live (written to in the last 30 s) throughout.
+ */
+async function replay() {
+  const held = join(root, 'live');
+  const { transcript, hooks } = JSON.parse(readFileSync(join(held, 'target.json'), 'utf8'));
+  const rows = (f) => readFileSync(join(held, f), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const lines = rows('session.jsonl');
+  const events = rows('hooks.jsonl');
+  mkdirSync(dirname(transcript), { recursive: true });
+  mkdirSync(dirname(hooks), { recursive: true });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let last = NaN;
+  let h = 0;
+  for (const rec of lines) {
+    const t = Date.parse(rec.timestamp ?? rec.snapshot?.timestamp ?? '');
+    if (t > last) await sleep(Math.min(3000, Math.max(400, (t - last) / 4)));
+    if (Number.isFinite(t)) last = t;
+    const now = new Date().toISOString();
+    if (rec.timestamp) rec.timestamp = now;
+    if (rec.snapshot) {
+      rec.snapshot.timestamp = now;
+      for (const b of Object.values(rec.snapshot.trackedFileBackups)) b.backupTime = now;
+    }
+    for (; h < events.length && Date.parse(events[h].received_at) <= last; h++) appendFileSync(hooks, JSON.stringify({ ...events[h], received_at: now }) + '\n');
+    appendFileSync(transcript, JSON.stringify(rec) + '\n');
+  }
+  for (; h < events.length; h++) appendFileSync(hooks, JSON.stringify({ ...events[h], received_at: new Date().toISOString() }) + '\n');
+}
+
+const summary = build({ Transcript, at, md, put, repo, record, join, root, live });
 writeFileSync(join(repo, 'agenttrace.json'), JSON.stringify({ contract: 1, project: 'LectureQA', record: '../lectureqa-record' }, null, 2) + '\n');
 git('add', '-A');
 execFileSync('git', [...ID, 'commit', '-q', '-m', 'Keep a learning record beside the code'], { cwd: repo });
@@ -272,4 +330,10 @@ if (start) {
   const app = spawn(process.execPath, [join(here, '..', 'bin', 'agenttrace.mjs')], { stdio: 'inherit', env: { ...process.env, CLAUDE_CONFIG_DIR: claude, AGENTTRACE_PORT: port } });
   // this process only waits on the app; when the app stops, so does it
   app.on('exit', (code) => process.exit(code ?? 0));
+  if (live) {
+    console.log('The last session starts in a few seconds and runs for about two minutes. Open it while it is live.');
+    setTimeout(() => replay().then(() => console.log('The live session has finished.')), 4000);
+  }
+} else if (live) {
+  console.log(`The live session is held in ${join(root, 'live')}; it plays only when the app is started here.`);
 }

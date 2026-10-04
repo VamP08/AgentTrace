@@ -684,6 +684,10 @@ The one it still misses is answered by a figure with no text.
 ## Limits`,
 );
 
+C.readme3 = C.readme2
+  .replace('| 800-character chunks, 120 overlap | 0.92 |\n\nThe one it still misses is answered by a figure with no text.', '| 800-character chunks, 120 overlap | 0.92 (12 questions) |\n| Reading figures and scanned slides | 0.94 (16 questions) |\n\nThe one it still misses is answered by handwriting on a figure.')
+  .replace("- Scanned slides and text inside images can't be read.",'- Scanned slides and the words inside figures are read as pictures (OCR). Handwriting is not.');
+
 C.notes = `# Precision vs recall (exam tomorrow)
 
 Spam filter example. 100 emails, 10 are actually spam. The filter flags 8, and 6 of those really are spam.
@@ -700,11 +704,58 @@ When to care about which:
 - F1 = both at once, low if either is low
 `;
 
+// ---------------------------------------------------------------- session 11: words inside pictures
+C.pyproject4 = C.pyproject3.replace('"fastembed>=0.3",\n', '"fastembed>=0.3",\n  "rapidocr-onnxruntime>=1.3",\n  "pypdfium2>=4.30",\n');
+
+C.ocr1 = `"""Text inside pictures: scanned slides, and the words drawn into a figure."""
+import numpy as np
+import pypdfium2 as pdfium
+from rapidocr_onnxruntime import RapidOCR
+
+# The same idea as fastembed: the model runs through ONNX Runtime, so no PyTorch.
+_engine = RapidOCR()
+
+
+def page_image(path, number: int, scale: float = 2.0) -> np.ndarray:
+    """One page drawn as pixels. 2x, because small slide text reads badly at 1x."""
+    page = pdfium.PdfDocument(path)[number - 1]
+    return np.asarray(page.render(scale=scale).to_pil())
+
+
+def read_image(image: np.ndarray) -> str:
+    """Every line of text the model finds, top to bottom."""
+    result, _ = _engine(image)
+    return "\\n".join(text for _box, text, _score in result or [])
+`;
+
+C.ocr2 = C.ocr1
+  .replace('_engine = RapidOCR()', '# use_angle_cls: two of the week 9 scans were photographed sideways and read as nonsense.\n_engine = RapidOCR(use_angle_cls=True)')
+  .replace('    result, _ = _engine(image)', '    result, _ = _engine(image, use_cls=True)');
+
+C.ingest2 = C.ingest
+  .replace('from pypdf import PdfReader\n', 'from pypdf import PdfReader\n\nfrom .ocr import page_image, read_image\n')
+  .replace(
+    '    reader = PdfReader(path)\n    return [Page(path.name, i + 1, (p.extract_text() or "").strip()) for i, p in enumerate(reader.pages)]',
+    '    reader = PdfReader(path)\n    pages = []\n    for i, p in enumerate(reader.pages):\n        text = (p.extract_text() or "").strip()\n        # the text layer misses scans entirely and the words drawn inside figures\n        seen = read_image(page_image(path, i + 1))\n        pages.append(Page(path.name, i + 1, f"{text}\\n{seen}".strip()))\n    return pages',
+  );
+
+C.ingest3 = C.ingest2.replace(
+    '        # the text layer misses scans entirely and the words drawn inside figures\n        seen = read_image(page_image(path, i + 1))\n',
+    '        # the text layer misses scans entirely and the words drawn inside figures; reading every\n        # page took 2m 48s, so only pages with little text or with images get read as pictures\n        seen = read_image(page_image(path, i + 1)) if len(text) < 200 or p.images else ""\n',
+  );
+
+C.evalQs2 = C.evalQs + [
+  ['What does the curse of dimensionality say about distances?', 'week9.pdf', 4],
+  ['What does PCA keep when it drops dimensions?', 'week9.pdf', 7],
+  ['How is the number of clusters chosen with the elbow method?', 'week9.pdf', 12],
+  ['What does the sigmoid output mean in the figure on logistic regression?', 'week9.pdf', 15],
+].map(([q, source, page]) => JSON.stringify({ q, source, page })).join('\n') + '\n';
+
 const PASS = (n) => `============================= test session starts =============================\ncollected ${n} items\n\n${'.'.repeat(n)}                                                              [100%]\n\n============================== ${n} passed in ${(0.4 + n * 0.3).toFixed(2)}s ==============================`;
 const LIST = (lines) => lines.join('\n');
 
 // ---------------------------------------------------------------- the sessions
-export function build({ Transcript, at, md, put, repo, join, root }) {
+export function build({ Transcript, at, md, put, repo, join, root, live }) {
   put('lectures/README.md', 'Put your lecture PDFs here. They are not committed.\n');
 
   // 1. the scaffold, and the first real bug: the page cannot reach the API
@@ -937,6 +988,43 @@ export function build({ Transcript, at, md, put, repo, join, root }) {
   s10.done(`Committed as ${c10}. Good luck with the final.`, 60);
   s10.save();
 
+  // 11. words inside pictures: the figure the eval still misses, and the scanned week 9 slides.
+  // With --live this is the session that plays in while the app is open.
+  const s11 = new Transcript('Read figures and scanned slides', Date.now() - 95 * 60_000);
+  s11.user("ok M8. the attention question still misses because the answer is inside a figure, and the week 9 slides are scanned so search cant see them at all. can it read text in pictures? no pytorch again pls");
+  s11.orient();
+  s11.say("Yes. That's OCR: a model looks at the page as a picture and writes out the words it sees. Two ways to get it: Tesseract, a separate program everyone in your class would have to install (brew on Mac, an installer on Windows), or RapidOCR, a pip package that runs its model through ONNX Runtime the way fastembed does. Neither needs PyTorch. RapidOCR keeps the README setup to one pip install, so I'll use that. Plan:", 700);
+  s11.todo([['Read pages as pictures with RapidOCR', 'in_progress'], ['Add the scanned week 9 questions to the eval', 'pending'], ['Measure recall@5', 'pending']]);
+  s11.read('lectureqa/ingest.py');
+  s11.bash('.venv/Scripts/python -m pip install rapidocr-onnxruntime pypdfium2', 'Install the OCR model and a PDF renderer', 'Successfully installed onnxruntime-1.19.2 opencv-python-4.10.0.84 pyclipper-1.3.0 pypdfium2-4.30.0 rapidocr-onnxruntime-1.3.24 shapely-2.0.6', { seconds: 23 });
+  s11.edit('pyproject.toml', C.pyproject4);
+  s11.write('lectureqa/ocr.py', C.ocr1);
+  s11.edit('lectureqa/ingest.py', C.ingest2);
+  s11.edit('eval/questions.jsonl', C.evalQs2);
+  const evalCmd = '.venv/Scripts/python eval/run_eval.py';
+  s11.bash(evalCmd, 'Measure recall@5 with OCR', 'recall@5: 0.81 over 16 questions\n  missed: What does PCA keep when it drops dimensions?\n  missed: How is the number of clusters chosen with the elbow method?\n  missed: What does the sigmoid output mean in the figure on logistic regression?', { seconds: 74 });
+  s11.helper('general-purpose', 'Check what OCR read on the scanned pages', 'eval/run_eval.py still misses three week 9 questions (pages 7, 12 and 15). week9.pdf is scanned. Read those pages with lectureqa/ocr.py, compare what it read with what the slide says, and say why each question misses. Do not change any code.', ['lectureqa/ocr.py', 'eval/questions.jsonl'], 'Pages 7 and 12 were photographed sideways, so the model reads each word as a column of single letters: page 7 comes out as "P C A k e e p s" one letter per line instead of "PCA keeps the directions with the most variance". RapidOCR has a direction classifier for this (use_angle_cls) that turns each line upright before reading it; it is off by default. Page 15 is different: the answer is a note written by hand on the figure, and the model reads print, not handwriting.', { greps: [['week9', 'eval', 'eval/questions.jsonl:14:{"q": "What does PCA keep when it drops dimensions?", "source": "week9.pdf", "page": 7}\neval/questions.jsonl:15:{"q": "How is the number of clusters chosen with the elbow method?", "source": "week9.pdf", "page": 12}\neval/questions.jsonl:16:{"q": "What does the sigmoid output mean in the figure on logistic regression?", "source": "week9.pdf", "page": 15}']] });
+  s11.say("Two of the scans were photographed sideways, and the model read them a letter at a time. RapidOCR can turn each line upright first; I'll switch that on. The third one is handwriting, which this model doesn't read.");
+  s11.edit('lectureqa/ocr.py', C.ocr2);
+  s11.bash(evalCmd, 'Measure recall@5 again', 'recall@5: 0.94 over 16 questions\n  missed: What does the sigmoid output mean in the figure on logistic regression?', { seconds: 79 });
+  s11.done("recall@5 is 0.94 over 16 questions, and the attention question finally finds its figure. The one miss left is the sigmoid slide, where the answer is handwritten on the figure.", 700);
+  s11.user('nice!! startup feels way slower now tho');
+  const cold = 'rm -rf .cache && time .venv/Scripts/python -c "from lectureqa.main import index"';
+  s11.bash(cold, 'Time a cold start', 'real\t2m48.112s\nuser\t9m12.403s\nsys\t0m21.950s', { seconds: 170 });
+  s11.say("2 minutes 48 on a cold start, up from 41 seconds. It reads all 216 pages as pictures, even the ones whose text layer is fine. Only pages with almost no text, or with images on them, need it.", 500);
+  s11.edit('lectureqa/ingest.py', C.ingest3);
+  s11.bash(cold, 'Time a cold start again', 'real\t0m58.920s\nuser\t3m02.118s\nsys\t0m8.410s', { seconds: 61 });
+  s11.bash(evalCmd, 'Check recall@5 did not drop', 'recall@5: 0.94 over 16 questions\n  missed: What does the sigmoid output mean in the figure on logistic regression?', { seconds: 40 });
+  s11.done("Cold start is 58 seconds now (31 of 216 pages read as pictures), and recall@5 is still 0.94. Warm starts are still 1.3 seconds, because the cache keeps the embeddings.", 500);
+  s11.compact('The student is adding OCR to LectureQA for milestone M8. lectureqa/ocr.py reads pages as pictures with RapidOCR (ONNX, no PyTorch), with use_angle_cls on for sideways scans. ingest.py only reads pages with little text or with images that way. recall@5 is 0.94 over 16 questions; the one miss is handwriting on week9 p.15. Cold start 58 s, warm 1.3 s. Nothing committed yet.');
+  s11.user('add a line to the readme that it reads scanned slides now, people kept asking');
+  s11.edit('README.md', C.readme3);
+  s11.done('Added it under "What it can do", with the one thing it still can\'t: handwriting.', 200);
+  s11.user('commit');
+  const c11 = s11.commit('Read figures and scanned slides with OCR; recall@5 0.94 over 16 questions');
+  s11.done(`Committed as ${c11}.`, 60);
+  s11.save({ live });
+
   // ---------------------------------------------------------------- the record
   // Written the way a student keeps notes on their own project: what we did, what went wrong, what
   // to remember for the exam.
@@ -945,7 +1033,7 @@ export function build({ Transcript, at, md, put, repo, join, root }) {
 
   md('roadmap.md', `
 project: LectureQA
-updated: ${iso(s10)}
+updated: ${iso(s11)}
 milestones:
   - id: M1
     title: Get something running
@@ -977,13 +1065,13 @@ milestones:
     gate: Starts in under 2 seconds after the first run, and a classmate can set it up from the README alone.
   - id: M8
     title: Figures and scanned slides
-    status: planned
+    status: done
     gate: Text inside images gets read, and the attention question in the eval set finally works.
 `, `An app that answers questions from my ML lecture notes and tells me which page. Started three weeks before the final, which in hindsight was the whole point.`);
 
   md('stack.md', `
 project: LectureQA
-updated: ${iso(s5)}
+updated: ${iso(s11)}
 stack:
   - name: fastapi
     category: framework
@@ -1002,6 +1090,13 @@ stack:
   - name: pypdf
     category: library
     why: Reads the text layer of the PDFs. Can't read text inside images.
+  - name: rapidocr-onnxruntime
+    category: library
+    why: Reads the words in scanned slides and figures. A pip install, and no PyTorch.
+    learning: ocr
+  - name: pypdfium2
+    category: library
+    why: Draws a PDF page as pixels, so OCR has a picture to read.
   - name: uvicorn
     category: server
     why: What actually runs the FastAPI app.
@@ -1061,13 +1156,14 @@ components:
 
   md('gaps.md', `
 project: LectureQA
-updated: ${iso(s9)}
+updated: ${iso(s11)}
 gaps:
   - id: G1
     title: Scanned slides and figures have no text, so search can't find them
     severity: medium
-    status: open
+    status: fixed
     found: ${day(s2)}
+    fixed: ${day(s11)}
   - id: G2
     title: Wrapping excerpts makes prompt injection harder, not impossible
     severity: medium
@@ -1095,7 +1191,12 @@ gaps:
     severity: low
     status: open
     found: ${day(s5)}
-`, `**G1.** pypdf only reads the text layer. A scanned page doesn't have one, and words inside a figure are just pixels. This is why "what does attention compute" still fails. M8.
+  - id: G7
+    title: Handwriting on a slide still can't be read
+    severity: low
+    status: open
+    found: ${day(s11)}
+`, `**G1, fixed.** pypdf only reads the text layer. A scanned page doesn't have one, and words inside a figure are just pixels. Pages with little text or with images are now read as pictures (OCR), and "what does attention compute" finally works.
 
 **G2.** Telling the model to ignore instructions is itself an instruction, so a clever enough PDF could still get through. There's a test so the wrapping at least doesn't get removed by accident.
 
@@ -1105,7 +1206,9 @@ gaps:
 
 **G5.** uvicorn only listens on localhost by default, so it's fine unless someone starts it with --host 0.0.0.0 in the library. Worth a line in the README.
 
-**G6.** Nothing we can do from our side; Chrome, Edge and Firefox work.`);
+**G6.** Nothing we can do from our side; Chrome, Edge and Firefox work.
+
+**G7.** The sigmoid question's answer is a note written by hand on the figure. RapidOCR reads print. The only eval question left that misses.`);
 
   const lesson = (slug, s, front, body) => md(`learning/${slug}.md`, `${front.trim()}\ndate: ${iso(s)}\nsession: ${s.id}`, body);
 
@@ -1436,6 +1539,47 @@ would have reused vectors from the wrong model.
 
 \`key\` in \`lectureqa/cache.py\` and \`tests/test_cache.py\`.`);
 
+  lesson('ocr', s11, `
+title: OCR (reading the words in a picture)
+summary: A model looks at a page as pixels and writes out the words it sees, for pages that have no text layer
+type: library
+level: beginner
+tags: [retrieval, ml]
+files: [lectureqa/ocr.py, lectureqa/ingest.py]
+anchor: def read_image
+prerequisites: [embeddings]
+related: [running-a-model-without-pytorch]
+questions:
+  - kind: explain
+    q: "pypdf already reads the PDF. Why could it not find the answer to the attention question?"
+    a: "pypdf reads the text layer. The answer was drawn inside a figure, so it was pixels, not text. OCR reads the pixels."
+  - kind: predict
+    q: "A slide was photographed sideways. What does OCR read without use_angle_cls?"
+    a: "Each word as a column of single letters, so search can't match it. The direction classifier turns each line upright first."
+  - kind: recall
+    q: "Why not read every page as a picture?"
+    a: "It took the cold start from 41 seconds to 2 minutes 48. Only pages with little text or with images need it."
+`, `## What it is
+
+OCR (optical character recognition) turns a picture of text into text. The page is drawn as pixels,
+a model finds where the lines of text are, and a second model reads each line.
+
+## Why here
+
+pypdf only reads a PDF's text layer. The week 9 slides are scans, which have none, and the attention
+answer is drawn inside a figure. Search can't find words that aren't text.
+
+## How it works
+
+\`page_image\` draws the page at 2x with pypdfium2, because small slide text reads badly at 1x.
+\`read_image\` hands the pixels to RapidOCR and joins the lines it finds, top to bottom. Like fastembed,
+the model runs through ONNX Runtime, so there is no PyTorch.
+
+## Where to look
+
+\`read_image\` in \`lectureqa/ocr.py\`, and the line in \`lectureqa/ingest.py\` that decides which pages
+need it.`);
+
   const decision = (slug, s, title, tags, files, body) => md(`decisions/${slug}.md`, `
 title: ${title}
 status: accepted
@@ -1492,6 +1636,16 @@ session: ${s.id}
 
 **Consequence.** Warm start 1.3 s. Change anything that matters and it re-embeds by itself.`);
 
+  decision('rapidocr-not-tesseract', s11, 'Read pictures with RapidOCR, not Tesseract', 'dependencies, retrieval', 'lectureqa/ocr.py, pyproject.toml', `**Context.** The week 9 slides are scans and the attention answer is inside a figure; search can't see either.
+
+**Options.** Tesseract, the best-known OCR, which is a separate program every classmate would install (brew on Mac, an installer on Windows). Or RapidOCR, a pip package that runs its models through ONNX Runtime.
+
+**Decision.** RapidOCR, with its direction classifier on.
+
+**Why.** Setup stays one pip install, the README doesn't grow an install step per operating system, and like fastembed there is no PyTorch.
+
+**Consequence.** It reads print, not handwriting (G7). Cold start went to 58 s, because 31 of 216 pages are read as pictures; warm starts are unchanged.`);
+
   const journal = (s, milestone, summary, body, sha, learning, decisions, next = []) =>
     md(`journal/${day(s)}-${iso(s).slice(11, 16).replace(':', '')}.md`, `
 date: ${day(s)}
@@ -1533,7 +1687,12 @@ Excerpts go inside <excerpt> tags now, with the rule stated first. Not a complet
 
 The test I asked for showed the first cache key would have reused vectors after switching models. The key now includes the chunk settings and the model name.`, c9, ['cache-keys'], ['cache-by-content-and-settings']);
   journal(s10, 'M7', 'A README so people in my class can run it before the final, with the eval numbers in it.', `Setup for Mac and Windows, what it can't do, and the 0.67 to 0.92 table because nobody believes "it works" without a number.`, c10, [], [], ['Read text from figures and scanned slides (M8)']);
+  journal(s11, 'M8', 'Scanned slides and figures get read as pictures now. recall@5 is 0.94 over 16 questions, and the attention question finally works.', `Added OCR with RapidOCR (a pip install, no PyTorch) and four questions about the scanned week 9 slides. First run: 0.81.
 
-  const all = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10];
-  return `eleven sessions (ten in the repository, one in a notes folder), commits ${all.join(' ')}`;
+A helper read the three misses. Two scans were photographed sideways and came out one letter per line; the direction classifier fixed both. The third is handwriting (G7).
+
+Reading every page as a picture made a cold start 2m 48s. Now only pages with little text or with images are: 58 s.`, c11, ['ocr'], ['rapidocr-not-tesseract']);
+
+  const all = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11];
+  return `twelve sessions (eleven in the repository, one in a notes folder), commits ${all.join(' ')}`;
 }
